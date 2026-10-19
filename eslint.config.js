@@ -20,11 +20,11 @@ export default [
     files: ['src/content/**/*.js'],
     languageOptions: {
       sourceType: 'script',
-      globals: { GLINT_LANGUAGES: 'readonly', GLINT_CARD_CSS: 'readonly', GLINT_ICONS: 'readonly' },
+      globals: { GLINT_LANGUAGES: 'readonly', GLINT_PARSE_DICTIONARY: 'readonly', GLINT_CARD_CSS: 'readonly', GLINT_ICONS: 'readonly' },
     },
   },
   {
-    files: ['src/shared/languages.js'],
+    files: ['src/shared/languages.js', 'src/shared/dictionary.js'],
     languageOptions: { sourceType: 'script' },
   },
   {

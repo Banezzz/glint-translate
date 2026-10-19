@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { detectSourceLanguage, guessLanguageByScript, languageLabel, resolveTargets } from '../../src/shared/lang.js';
 import { buildSystemPrompt, clampInput, isDictionaryCandidate, MAX_INPUT_CHARS } from '../../src/shared/prompt.js';
 import { effectiveProvider, isProviderReady, mergeSettings } from '../../src/shared/settings.js';
+import '../../src/shared/dictionary.js';
+
+const parseDictionary = globalThis.GLINT_PARSE_DICTIONARY;
 
 test('guessLanguageByScript', () => {
   assert.equal(guessLanguageByScript('今天天气很好'), 'zh');
@@ -84,4 +87,18 @@ test('settings merge and effective provider', () => {
   assert.equal(effectiveProvider(stale.provider).baseUrl, 'https://other.example.com/v1');
   assert.equal(effectiveProvider(stale.provider).type, 'openai');
   assert.equal(isProviderReady(mergeSettings({})), false);
+});
+
+test('parseDictionary reads the dictionary format, including partial input', () => {
+  const entry = parseDictionary('/həˈloʊ/\nint. 你好；喂\nn. & v. 招呼\n\ne.g. Hello there! → 你好！\nextra note');
+  assert.equal(entry.phonetic, '/həˈloʊ/');
+  assert.deepEqual(entry.rows, [
+    { kind: 'pos', pos: 'int.', text: '你好；喂' },
+    { kind: 'pos', pos: 'n. & v.', text: '招呼' },
+    { kind: 'example', text: 'Hello there! → 你好！' },
+    { kind: 'text', text: 'extra note' },
+  ]);
+  // Mid-stream: an unfinished phonetic line is still treated as the phonetic.
+  assert.deepEqual(parseDictionary('/həˈl'), { phonetic: '/həˈl', rows: [] });
+  assert.deepEqual(parseDictionary(''), { phonetic: '', rows: [] });
 });
