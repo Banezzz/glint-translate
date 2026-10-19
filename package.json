@@ -6,12 +6,13 @@
   "type": "module",
   "scripts": {
     "lint": "eslint .",
-    "test": "node --test test/unit/",
+    "test": "node --test 'test/unit/*.test.mjs'",
     "check": "node scripts/check-manifest.mjs",
     "icons": "node scripts/gen-icons.mjs",
-    "e2e": "node --test test/e2e/",
+    "e2e": "node --test --test-concurrency=1 'test/e2e/*.test.mjs'",
     "pack": "node scripts/pack.mjs",
-    "ci": "npm run lint && npm run check && npm test"
+    "ci": "npm run lint && npm run check && npm test",
+    "mock": "node test/e2e/mock-server.mjs"
   },
   "engines": {
     "node": ">=20"
