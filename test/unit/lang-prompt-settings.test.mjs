@@ -35,7 +35,9 @@ test('resolveTargets swaps to the second language when source equals target', ()
   assert.equal(resolveTargets({ sourceLang: 'zh', targetLang: 'zh-CN', secondLang: 'en', forceTarget: true }).target, 'zh-CN');
   // A misconfigured second language equal to the target still yields a different language.
   assert.equal(resolveTargets({ sourceLang: 'en', targetLang: 'en', secondLang: 'en' }).target, 'zh-CN');
-  assert.equal(languageLabel('zh'), '简体中文');
+  assert.equal(languageLabel('zh'), '中文');
+  assert.equal(languageLabel('zh-cn'), '简体中文');
+  assert.equal(languageLabel('fr-CA'), '法语');
   assert.equal(languageLabel('und'), '自动检测');
 });
 

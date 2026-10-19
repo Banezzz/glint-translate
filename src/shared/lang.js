@@ -11,7 +11,10 @@ export function getLanguage(code) {
 }
 
 export function languageLabel(code) {
-  return getLanguage(code)?.label ?? (code && code !== 'und' ? code : '自动检测');
+  if (!code || code === 'und') return '自动检测';
+  // Detection only reports the macro language, not the script.
+  if (code.toLowerCase() === 'zh') return '中文';
+  return getLanguage(code)?.label ?? code;
 }
 
 export function primarySubtag(code) {
