@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Glint 划词翻译 · 设置</title>
+    <link rel="icon" href="../../icons/icon-32.png" />
+    <link rel="stylesheet" href="../ui/base.css" />
+    <link rel="stylesheet" href="options.css" />
+    <script type="module" src="options.js"></script>
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <img class="logo" src="../../icons/logo.svg" alt="" width="40" height="40" />
+        <div class="hero-text">
+          <h1>Glint 划词翻译</h1>
+          <p>选中即译，接入你自己的 OpenAI / Claude 兼容大模型</p>
+        </div>
+        <span class="version" id="version"></span>
+      </header>
+
+      <section class="panel" aria-labelledby="sec-provider">
+        <div class="panel-head">
+          <h2 id="sec-provider">模型服务</h2>
+          <p>填写 API 地址与 Key，Glint 会自动识别接口协议并拉取可用模型。</p>
+        </div>
+
+        <div class="row">
+          <div class="row-label">快速填写</div>
+          <div class="row-control">
+            <div class="presets" id="presets"></div>
+          </div>
+        </div>
+
+        <div class="row">
+          <label class="row-label" for="baseUrl">API 地址</label>
+          <div class="row-control">
+            <input class="input mono" id="baseUrl" type="url" spellcheck="false" autocomplete="off" placeholder="https://api.openai.com/v1" />
+            <p class="hint">可填根地址、/v1 地址或完整接口地址，例如 https://api.anthropic.com</p>
+          </div>
+        </div>
+
+        <div class="row">
+          <label class="row-label" for="apiKey">API Key</label>
+          <div class="row-control">
+            <div class="input-wrap">
+              <input class="input mono" id="apiKey" type="password" spellcheck="false" autocomplete="off" placeholder="sk-…" />
+              <button class="icon-btn" id="toggleKey" type="button" title="显示 / 隐藏" aria-label="显示或隐藏 API Key">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              </button>
+            </div>
+            <p class="hint">仅保存在本机浏览器中，只会发送给你填写的 API 地址。本地模型（如 Ollama）可留空。</p>
+          </div>
+        </div>
+
+        <div class="row">
+          <div class="row-label">接口协议</div>
+          <div class="row-control">
+            <div class="seg" role="radiogroup" aria-label="接口协议">
+              <label><input type="radio" name="type" value="auto" /><span>自动检测</span></label>
+              <label><input type="radio" name="type" value="openai" /><span>OpenAI 兼容</span></label>
+              <label><input type="radio" name="type" value="anthropic" /><span>Anthropic 兼容</span></label>
+            </div>
+          </div>
+        </div>
+
+        <div class="connection" id="connection" data-state="idle">
+          <div class="connection-main">
+            <span class="dot" id="connDot"></span>
+            <span class="spinner" id="connSpinner" hidden></span>
+            <div class="connection-text">
+              <div class="connection-title" id="connTitle">填写 API 地址后自动检测</div>
+              <div class="connection-sub" id="connSub"></div>
+            </div>
+          </div>
+          <button class="btn btn-sm" id="detect" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+            </svg>
+            <span>检测</span>
+          </button>
+        </div>
+
+        <div class="row">
+          <label class="row-label" for="model">模型</label>
+          <div class="row-control">
+            <div class="combo" id="combo">
+              <input class="input mono" id="model" type="text" spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="modelList" placeholder="检测后可从列表选择，也可直接输入模型名" />
+              <span class="badge combo-count" id="modelCount" hidden></span>
+              <ul class="combo-list" id="modelList" role="listbox" hidden></ul>
+            </div>
+            <p class="hint">翻译场景推荐速度快、成本低的模型，例如 Haiku、mini、Flash 系列。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="sec-lang">
+        <div class="panel-head">
+          <h2 id="sec-lang">翻译偏好</h2>
+        </div>
+        <div class="row">
+          <label class="row-label" for="targetLang">目标语言</label>
+          <div class="row-control narrow">
+            <select class="select" id="targetLang"></select>
+          </div>
+        </div>
+        <div class="row">
+          <label class="row-label" for="secondLang">第二语言</label>
+          <div class="row-control narrow">
+            <select class="select" id="secondLang"></select>
+            <p class="hint">当原文已经是目标语言时，改为翻译成这门语言。</p>
+          </div>
+        </div>
+        <div class="row">
+          <label class="row-label" for="dictionary">单词模式</label>
+          <div class="row-control inline">
+            <input class="switch" id="dictionary" type="checkbox" role="switch" />
+            <span class="hint inline-hint">选中单个外文单词或短语时，显示音标、词性释义与例句</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="sec-ui">
+        <div class="panel-head">
+          <h2 id="sec-ui">交互与外观</h2>
+        </div>
+        <div class="row">
+          <label class="row-label" for="enabled">划词翻译</label>
+          <div class="row-control inline">
+            <input class="switch" id="enabled" type="checkbox" role="switch" />
+            <span class="hint inline-hint">关闭后仍可使用右键菜单与快捷键</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-label">触发方式</div>
+          <div class="row-control">
+            <div class="choices" role="radiogroup" aria-label="触发方式">
+              <label class="choice">
+                <input type="radio" name="trigger" value="icon" />
+                <span class="choice-title">显示图标</span>
+                <span class="choice-desc">选中后出现小图标，点击再翻译</span>
+              </label>
+              <label class="choice">
+                <input type="radio" name="trigger" value="auto" />
+                <span class="choice-title">直接翻译</span>
+                <span class="choice-desc">选中文本后立即弹出译文</span>
+              </label>
+              <label class="choice">
+                <input type="radio" name="trigger" value="manual" />
+                <span class="choice-title">仅手动</span>
+                <span class="choice-desc">只通过快捷键或右键菜单</span>
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-label">主题</div>
+          <div class="row-control">
+            <div class="seg" role="radiogroup" aria-label="主题">
+              <label><input type="radio" name="theme" value="auto" /><span>跟随系统</span></label>
+              <label><input type="radio" name="theme" value="light" /><span>浅色</span></label>
+              <label><input type="radio" name="theme" value="dark" /><span>深色</span></label>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <label class="row-label" for="fontSize">译文字号</label>
+          <div class="row-control inline">
+            <input class="range" id="fontSize" type="range" min="12" max="20" step="1" />
+            <span class="range-value" id="fontSizeValue"></span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-label">快捷键</div>
+          <div class="row-control inline">
+            <span id="shortcut" class="shortcut"></span>
+            <button class="btn btn-sm btn-ghost" id="editShortcut" type="button">修改</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="sec-try">
+        <div class="panel-head">
+          <h2 id="sec-try">试一试</h2>
+          <p>使用当前配置翻译一段文字，确认一切正常。</p>
+        </div>
+        <div class="try">
+          <textarea class="textarea" id="tryInput" rows="3" spellcheck="false">Glint lets you translate any text on the web with the language model you already trust.</textarea>
+          <div class="try-bar">
+            <span class="try-meta" id="tryMeta"></span>
+            <button class="btn btn-primary" id="tryButton" type="button">
+              <span>翻译</span>
+              <kbd class="kbd-on-primary" id="tryKbd"></kbd>
+            </button>
+          </div>
+          <div class="try-output" id="tryOutputWrap" hidden>
+            <div class="translation" id="tryOutput"></div>
+          </div>
+        </div>
+      </section>
+
+      <footer class="foot">设置会自动保存 · API Key 只保存在本机</footer>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>
