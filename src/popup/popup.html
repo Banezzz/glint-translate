@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Glint 划词翻译</title>
+    <link rel="stylesheet" href="../ui/base.css" />
+    <link rel="stylesheet" href="popup.css" />
+    <script type="module" src="popup.js"></script>
+  </head>
+  <body>
+    <header class="bar">
+      <div class="brand">
+        <img class="logo" src="../../icons/logo.svg" alt="" width="26" height="26" />
+        <span>Glint</span>
+      </div>
+      <button class="icon-btn" id="openOptions" type="button" title="设置" aria-label="打开设置">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      </button>
+    </header>
+
+    <main>
+      <section class="setup" id="setup" hidden>
+        <div class="setup-icon">
+          <img src="../../icons/logo.svg" alt="" width="40" height="40" />
+        </div>
+        <h2>还差一步</h2>
+        <p>填写 API 地址和 Key，Glint 会自动识别接口和可用模型。</p>
+        <button class="btn btn-primary" id="setupButton" type="button">前往设置</button>
+      </section>
+
+      <section class="translate" id="translate" hidden>
+        <textarea class="textarea" id="input" rows="4" spellcheck="false" placeholder="输入或粘贴要翻译的文本"></textarea>
+        <div class="actions">
+          <label class="target">
+            <span class="target-label">译为</span>
+            <select class="select select-sm" id="targetLang"></select>
+          </label>
+          <button class="btn btn-primary" id="translateButton" type="button">
+            <span>翻译</span>
+            <kbd class="kbd-on-primary" id="kbd"></kbd>
+          </button>
+        </div>
+        <div class="result" id="resultWrap" hidden>
+          <div class="translation" id="result"></div>
+          <div class="result-foot">
+            <span class="result-meta" id="resultMeta"></span>
+            <button class="icon-btn" id="copy" type="button" title="复制译文" aria-label="复制译文">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M11 9h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <section class="toggles">
+      <label class="toggle-row">
+        <span>
+          <span class="toggle-title">划词翻译</span>
+          <span class="toggle-desc" id="triggerDesc"></span>
+        </span>
+        <input class="switch" id="enabled" type="checkbox" role="switch" />
+      </label>
+      <label class="toggle-row" id="siteRow" hidden>
+        <span>
+          <span class="toggle-title">在此网站启用</span>
+          <span class="toggle-desc" id="siteHost"></span>
+        </span>
+        <input class="switch" id="siteEnabled" type="checkbox" role="switch" />
+      </label>
+    </section>
+
+    <footer class="status" id="status">
+      <span class="dot" id="statusDot"></span>
+      <span class="status-text" id="statusText"></span>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,26 @@
+{
+  "name": "glint-translate",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Select-to-translate Chrome extension powered by your own OpenAI / Anthropic compatible LLM endpoint.",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test 'test/unit/*.test.mjs'",
+    "check": "node scripts/check-manifest.mjs",
+    "icons": "node scripts/gen-icons.mjs",
+    "e2e": "node --test --test-concurrency=1 'test/e2e/*.test.mjs'",
+    "pack": "node scripts/pack.mjs",
+    "ci": "npm run lint && npm run check && npm test",
+    "mock": "node test/e2e/mock-server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "playwright": "^1.64.1"
+  }
+}

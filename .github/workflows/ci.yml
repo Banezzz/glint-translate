@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, unit tests and package
+    # Drafts are still being iterated on; CI runs once the PR is ready.
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run check
+      - run: npm test
+      - run: npm run pack
+      - uses: actions/upload-artifact@v7
+        with:
+          name: glint-translate-extension
+          path: dist/*.zip
+          if-no-files-found: error
+
+  e2e:
+    name: Browser end-to-end tests
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-screenshots
+          path: .e2e-artifacts/
+          if-no-files-found: ignore

@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Glint 划词翻译",
+  "short_name": "Glint",
+  "version": "0.1.0",
+  "description": "选中即译，接入你自己的 OpenAI / Claude 兼容大模型。自动识别接口协议与可用模型。",
+  "minimum_chrome_version": "123",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Glint 划词翻译",
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "options_page": "src/options/options.html",
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "permissions": ["storage", "contextMenus", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/shared/languages.js", "src/shared/dictionary.js", "src/content/card-styles.js", "src/content/icons.js", "src/content/content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "commands": {
+    "translate-selection": {
+      "suggested_key": {
+        "default": "Alt+T"
+      },
+      "description": "翻译选中的文本"
+    }
+  }
+}
