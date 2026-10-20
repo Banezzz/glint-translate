@@ -12,7 +12,8 @@
     "e2e": "node --test --test-concurrency=1 'test/e2e/*.test.mjs'",
     "pack": "node scripts/pack.mjs",
     "ci": "npm run lint && npm run check && npm test",
-    "mock": "node test/e2e/mock-server.mjs"
+    "mock": "node test/e2e/mock-server.mjs",
+    "store:assets": "node scripts/store/assets.mjs"
   },
   "engines": {
     "node": ">=20"
