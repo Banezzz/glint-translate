@@ -49,6 +49,12 @@
         "default": "Alt+T"
       },
       "description": "翻译选中的文本"
+    },
+    "translate-page": {
+      "suggested_key": {
+        "default": "Alt+A"
+      },
+      "description": "翻译整个网页（双语对照）/ 显示原文"
     }
   }
 }

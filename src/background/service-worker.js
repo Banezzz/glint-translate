@@ -7,6 +7,7 @@ import { buildChatRequest, streamChat, TranslationError } from '../shared/transl
 const PORT_NAME = 'glint:translate';
 const PAGE_PORT_NAME = 'glint:page';
 const MENU_ID = 'glint-translate-selection';
+const PAGE_MENU_ID = 'glint-translate-page';
 const CONTENT_SCRIPTS = chrome.runtime.getManifest().content_scripts[0].js;
 
 // Recent results, so reopening the same selection (or revisiting a page) is
@@ -42,6 +43,7 @@ function keepAlive() {
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   await chrome.contextMenus.removeAll();
   chrome.contextMenus.create({ id: MENU_ID, title: '用 Glint 翻译“%s”', contexts: ['selection'] });
+  chrome.contextMenus.create({ id: PAGE_MENU_ID, title: '翻译此网页（双语对照）/ 显示原文', contexts: ['page'] });
   if (reason === 'install' || reason === 'update') await injectIntoOpenTabs();
   if (reason === 'install' && !isProviderReady(await loadSettings())) chrome.runtime.openOptionsPage();
 });
@@ -75,14 +77,18 @@ async function sendToTab(tabId, message, frameId) {
 }
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId !== MENU_ID || tab?.id === undefined) return;
-  sendToTab(tab.id, { type: 'glint:show', text: info.selectionText || '' }, info.frameId);
+  if (tab?.id === undefined) return;
+  if (info.menuItemId === MENU_ID) sendToTab(tab.id, { type: 'glint:show', text: info.selectionText || '' }, info.frameId);
+  // Page translation lives in the top frame only.
+  else if (info.menuItemId === PAGE_MENU_ID) sendToTab(tab.id, { type: 'glint:page', action: 'toggle' }, 0);
 });
 
 chrome.commands.onCommand.addListener(async (command, tab) => {
-  if (command !== 'translate-selection') return;
+  if (command !== 'translate-selection' && command !== 'translate-page') return;
   const target = tab?.id !== undefined ? tab : (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0];
-  if (target?.id !== undefined) sendToTab(target.id, { type: 'glint:translate-selection' });
+  if (target?.id === undefined) return;
+  if (command === 'translate-page') sendToTab(target.id, { type: 'glint:page', action: 'toggle' }, 0);
+  else sendToTab(target.id, { type: 'glint:translate-selection' });
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
