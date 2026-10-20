@@ -1,0 +1,17 @@
+{
+  "name": {
+    "message": "Glint Translate"
+  },
+  "description": {
+    "message": "Translate selections and whole pages side by side with your own OpenAI / Claude compatible model. Detects the API and models."
+  },
+  "actionTitle": {
+    "message": "Glint Translate"
+  },
+  "commandSelection": {
+    "message": "Translate the selected text"
+  },
+  "commandPage": {
+    "message": "Translate the whole page (bilingual) / show the original"
+  }
+}

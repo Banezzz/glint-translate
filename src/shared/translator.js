@@ -1,9 +1,11 @@
 import { ANTHROPIC, authHeaders, errorMessage } from './providers.js';
 import { createSSEParser } from './sse.js';
 
+// Carries a code (e.g. 'network', 'http_404') rather than display text;
+// consumers turn it into a message in the interface language.
 export class TranslationError extends Error {
-  constructor(code, message, detail = '') {
-    super(message);
+  constructor(code, detail = '') {
+    super(code);
     this.name = 'TranslationError';
     this.code = code;
     this.detail = detail;
@@ -39,29 +41,12 @@ export function buildChatRequest({ type, baseUrl, apiKey, model, system, text, s
   };
 }
 
-const STATUS_MESSAGES = {
-  400: '请求被拒绝，请检查模型名称或参数',
-  401: 'API Key 无效或已过期',
-  402: '账户余额不足',
-  403: '没有访问权限',
-  404: '接口地址或模型不存在',
-  408: '请求超时',
-  413: '文本过长',
-  429: '请求过于频繁或额度不足',
-};
-
-export function httpErrorMessage(status) {
-  if (STATUS_MESSAGES[status]) return STATUS_MESSAGES[status];
-  if (status >= 500) return `服务暂时不可用（HTTP ${status}）`;
-  return `请求失败（HTTP ${status}）`;
-}
-
 // Extracts a text delta (or terminal signal) from one parsed payload of
 // either protocol. Both shapes are checked so a mislabeled endpoint still works.
 export function readPayload(obj) {
   if (!obj || typeof obj !== 'object') return {};
   if (obj.type === 'error' || (obj.error && !obj.choices)) {
-    return { error: errorMessage(obj) || '模型服务返回了错误' };
+    return { error: errorMessage(obj) || '' };
   }
   // Anthropic
   if (obj.type === 'content_block_delta') return { text: obj.delta?.type === 'text_delta' ? obj.delta.text : '' };
@@ -125,7 +110,7 @@ async function* rawDeltas(res) {
           if (event.data.trim() === '[DONE]') return;
           for (const obj of parseEventData(event.data)) {
             const out = readPayload(obj);
-            if (out.error) throw new TranslationError('provider', out.error);
+            if (out.error !== undefined) throw new TranslationError('provider', out.error);
             if (out.text) yield out.text;
             if (out.done) return;
           }
@@ -138,10 +123,10 @@ async function* rawDeltas(res) {
       try {
         obj = JSON.parse(jsonText);
       } catch {
-        throw new TranslationError('bad_response', '无法解析模型服务的响应', jsonText.slice(0, 300));
+        throw new TranslationError('bad_response', jsonText.slice(0, 300));
       }
       const out = readPayload(obj);
-      if (out.error) throw new TranslationError('provider', out.error);
+      if (out.error !== undefined) throw new TranslationError('provider', out.error);
       if (out.text) yield out.text;
     }
   } finally {
@@ -160,7 +145,7 @@ export async function* streamChat({ request, fetchImpl = fetch, signal }) {
     res = await fetchImpl(request.url, { ...request.init, signal });
   } catch (err) {
     if (signal?.aborted) throw err;
-    throw new TranslationError('network', '无法连接到模型服务，请检查网络或 API 地址', String(err?.message || err));
+    throw new TranslationError('network', String(err?.message || err));
   }
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -170,9 +155,9 @@ export async function* streamChat({ request, fetchImpl = fetch, signal }) {
     } catch {
       // Keep the raw text.
     }
-    throw new TranslationError(`http_${res.status}`, httpErrorMessage(res.status), detail);
+    throw new TranslationError(`http_${res.status}`, detail);
   }
-  if (!res.body) throw new TranslationError('bad_response', '模型服务没有返回内容');
+  if (!res.body) throw new TranslationError('empty_response');
 
   let full = '';
   let emitted = 0;

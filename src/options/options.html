@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Glint 划词翻译 · 设置</title>
+    <title data-i18n="options.pageTitle">Glint 划词翻译 · 设置</title>
     <link rel="icon" href="../../icons/icon-32.png" />
     <link rel="stylesheet" href="../ui/base.css" />
     <link rel="stylesheet" href="options.css" />
@@ -14,30 +14,34 @@
       <header class="hero">
         <img class="logo" src="../../icons/logo.svg" alt="" width="40" height="40" />
         <div class="hero-text">
-          <h1>Glint 划词翻译</h1>
-          <p>选中即译，接入你自己的 OpenAI / Claude 兼容大模型</p>
+          <h1 data-i18n="app.name">Glint 划词翻译</h1>
+          <p data-i18n="options.tagline">选中即译，接入你自己的 OpenAI / Claude 兼容大模型</p>
         </div>
-        <span class="version" id="version"></span>
+        <div class="quick">
+          <span class="version" id="version"></span>
+          <button class="icon-btn" id="themeToggle" type="button"></button>
+          <button class="lang-toggle" id="langToggle" type="button"><span data-locale="zh-CN">中</span><span data-locale="en">EN</span></button>
+        </div>
       </header>
 
       <section class="panel" aria-labelledby="sec-provider">
         <div class="panel-head">
-          <h2 id="sec-provider">模型服务</h2>
-          <p>填写 API 地址与 Key，Glint 会自动识别接口协议并拉取可用模型。</p>
+          <h2 id="sec-provider" data-i18n="provider.title">模型服务</h2>
+          <p data-i18n="provider.desc">填写 API 地址与 Key，Glint 会自动识别接口协议并拉取可用模型。</p>
         </div>
 
         <div class="row">
-          <div class="row-label">快速填写</div>
+          <div class="row-label" data-i18n="provider.presets">快速填写</div>
           <div class="row-control">
             <div class="presets" id="presets"></div>
           </div>
         </div>
 
         <div class="row">
-          <label class="row-label" for="baseUrl">API 地址</label>
+          <label class="row-label" for="baseUrl" data-i18n="provider.baseUrl">API 地址</label>
           <div class="row-control">
             <input class="input mono" id="baseUrl" type="url" spellcheck="false" autocomplete="off" placeholder="https://api.openai.com/v1" />
-            <p class="hint">可填根地址、/v1 地址或完整接口地址，例如 https://api.anthropic.com</p>
+            <p class="hint" data-i18n="provider.baseUrl.hint">可填根地址、/v1 地址或完整接口地址，例如 https://api.anthropic.com</p>
           </div>
         </div>
 
@@ -46,24 +50,24 @@
           <div class="row-control">
             <div class="input-wrap">
               <input class="input mono" id="apiKey" type="password" spellcheck="false" autocomplete="off" placeholder="sk-…" />
-              <button class="icon-btn" id="toggleKey" type="button" title="显示 / 隐藏" aria-label="显示或隐藏 API Key">
+              <button class="icon-btn" id="toggleKey" type="button" title="显示 / 隐藏" data-i18n-title="provider.apiKey.toggle" aria-label="显示或隐藏 API Key" data-i18n-aria-label="provider.apiKey.toggleLabel">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0" />
                   <circle cx="12" cy="12" r="3" />
                 </svg>
               </button>
             </div>
-            <p class="hint">仅保存在本机浏览器中，只会发送给你填写的 API 地址。本地模型（如 Ollama）可留空。</p>
+            <p class="hint" data-i18n="provider.apiKey.hint">仅保存在本机浏览器中，只会发送给你填写的 API 地址。本地模型（如 Ollama）可留空。</p>
           </div>
         </div>
 
         <div class="row">
-          <div class="row-label">接口协议</div>
+          <div class="row-label" data-i18n="provider.protocol">接口协议</div>
           <div class="row-control">
-            <div class="seg" role="radiogroup" aria-label="接口协议">
-              <label><input type="radio" name="type" value="auto" /><span>自动检测</span></label>
-              <label><input type="radio" name="type" value="openai" /><span>OpenAI 兼容</span></label>
-              <label><input type="radio" name="type" value="anthropic" /><span>Anthropic 兼容</span></label>
+            <div class="seg" role="radiogroup" aria-label="接口协议" data-i18n-aria-label="provider.protocol">
+              <label><input type="radio" name="type" value="auto" /><span data-i18n="lang.auto">自动检测</span></label>
+              <label><input type="radio" name="type" value="openai" /><span data-i18n="protocol.openai">OpenAI 兼容</span></label>
+              <label><input type="radio" name="type" value="anthropic" /><span data-i18n="protocol.anthropic">Anthropic 兼容</span></label>
             </div>
           </div>
         </div>
@@ -82,153 +86,193 @@
               <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
               <path d="M21 3v5h-5" />
             </svg>
-            <span>检测</span>
+            <span data-i18n="provider.detect">检测</span>
           </button>
         </div>
 
         <div class="row">
-          <label class="row-label" for="model">模型</label>
+          <label class="row-label" for="model" data-i18n="provider.model">模型</label>
           <div class="row-control">
             <div class="combo" id="combo">
-              <input class="input mono" id="model" type="text" spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="modelList" placeholder="检测后可从列表选择，也可直接输入模型名" />
+              <input class="input mono" id="model" type="text" spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="modelList" placeholder="检测后可从列表选择，也可直接输入模型名" data-i18n-placeholder="provider.model.placeholder" />
               <span class="badge combo-count" id="modelCount" hidden></span>
               <ul class="combo-list" id="modelList" role="listbox" hidden></ul>
             </div>
-            <p class="hint">翻译场景推荐速度快、成本低的模型，例如 Haiku、mini、Flash 系列。</p>
+            <p class="hint" data-i18n="provider.model.hint">翻译场景推荐速度快、成本低的模型，例如 Haiku、mini、Flash 系列。</p>
           </div>
         </div>
       </section>
 
       <section class="panel" aria-labelledby="sec-lang">
         <div class="panel-head">
-          <h2 id="sec-lang">翻译偏好</h2>
+          <h2 id="sec-lang" data-i18n="prefs.title">翻译偏好</h2>
         </div>
         <div class="row">
-          <label class="row-label" for="targetLang">目标语言</label>
+          <label class="row-label" for="targetLang" data-i18n="prefs.target">目标语言</label>
           <div class="row-control narrow">
             <select class="select" id="targetLang"></select>
           </div>
         </div>
         <div class="row">
-          <label class="row-label" for="secondLang">第二语言</label>
+          <label class="row-label" for="secondLang" data-i18n="prefs.second">第二语言</label>
           <div class="row-control narrow">
             <select class="select" id="secondLang"></select>
-            <p class="hint">当原文已经是目标语言时，改为翻译成这门语言。</p>
+            <p class="hint" data-i18n="prefs.second.hint">当原文已经是目标语言时，改为翻译成这门语言。</p>
           </div>
         </div>
         <div class="row">
-          <label class="row-label" for="dictionary">单词模式</label>
+          <label class="row-label" for="dictionary" data-i18n="prefs.dictionary">单词模式</label>
           <div class="row-control inline">
             <input class="switch" id="dictionary" type="checkbox" role="switch" />
-            <span class="hint inline-hint">选中单个外文单词或短语时，显示音标、词性释义与例句</span>
+            <span class="hint inline-hint" data-i18n="prefs.dictionary.hint">选中单个外文单词或短语时，显示音标、词性释义与例句</span>
           </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="sec-prompt">
+        <div class="panel-head">
+          <h2 id="sec-prompt" data-i18n="prompt.title">提示词</h2>
+          <p data-i18n="prompt.desc">自定义发给模型的系统提示词，用变量插入语言和网页信息。与默认内容相同时会跟随插件更新。</p>
+        </div>
+        <div class="prompt-editor">
+          <div class="prompt-top">
+            <div class="seg prompt-tabs" role="radiogroup" aria-label="提示词类型" data-i18n-aria-label="prompt.mode">
+              <label><input type="radio" name="promptMode" value="translate" checked /><span data-i18n="prompt.mode.translate">划词翻译</span></label>
+              <label><input type="radio" name="promptMode" value="dictionary" /><span data-i18n="prompt.mode.dictionary">单词词典</span></label>
+              <label><input type="radio" name="promptMode" value="page" /><span data-i18n="prompt.mode.page">网页翻译</span></label>
+            </div>
+            <div class="prompt-status">
+              <span class="badge" id="promptBadge"></span>
+              <button class="btn btn-sm btn-ghost" id="promptReset" type="button" data-i18n="prompt.reset">恢复默认</button>
+            </div>
+          </div>
+          <div class="prompt-vars">
+            <span class="prompt-vars-label" data-i18n="prompt.vars">插入变量</span>
+            <span id="promptVars"></span>
+          </div>
+          <textarea class="textarea mono prompt-input" id="promptInput" rows="9" spellcheck="false"></textarea>
+          <details class="prompt-format" id="promptFormatWrap">
+            <summary data-i18n="prompt.format">固定的输出格式（自动附加在末尾，确保结果能被正确解析）</summary>
+            <pre id="promptFormat"></pre>
+          </details>
+          <p class="hint" data-i18n="prompt.hint">变量没有值时（例如网页没有标题），包含它的那一行会被省略。</p>
         </div>
       </section>
 
       <section class="panel" aria-labelledby="sec-page">
         <div class="panel-head">
-          <h2 id="sec-page">网页翻译</h2>
-          <p>点击悬浮球、按快捷键或在页面右键菜单中开启，默认双语对照（译文插在每段原文下方），悬停悬浮球可切换为仅译文或原文。只翻译滚动到的内容。</p>
+          <h2 id="sec-page" data-i18n="page.title">网页翻译</h2>
+          <p data-i18n="page.desc">点击悬浮球、按快捷键或在页面右键菜单中开启，默认双语对照（译文插在每段原文下方），悬停悬浮球可切换为仅译文或原文。只翻译滚动到的内容。</p>
         </div>
         <div class="row">
-          <label class="row-label" for="floatBall">悬浮球</label>
+          <label class="row-label" for="floatBall" data-i18n="page.ball">悬浮球</label>
           <div class="row-control inline">
             <input class="switch" id="floatBall" type="checkbox" role="switch" />
-            <span class="hint inline-hint" id="ballHint">在网页右侧显示，点击即翻译整页，可上下拖动</span>
+            <span class="hint inline-hint" id="ballHint" data-i18n="page.ball.hint">在网页右侧显示，点击即翻译整页，可上下拖动</span>
           </div>
         </div>
         <div class="row">
-          <div class="row-label">译文样式</div>
+          <div class="row-label" data-i18n="page.style">译文样式</div>
           <div class="row-control">
-            <div class="styles" role="radiogroup" aria-label="译文样式">
-              <label class="style-choice"><input type="radio" name="pageStyle" value="plain" /><span class="style-name">无样式</span><span class="style-sample" data-style="plain">译文</span></label>
-              <label class="style-choice"><input type="radio" name="pageStyle" value="dashed" /><span class="style-name">虚线下划线</span><span class="style-sample" data-style="dashed">译文</span></label>
-              <label class="style-choice"><input type="radio" name="pageStyle" value="faded" /><span class="style-name">淡化</span><span class="style-sample" data-style="faded">译文</span></label>
-              <label class="style-choice"><input type="radio" name="pageStyle" value="highlight" /><span class="style-name">高亮</span><span class="style-sample" data-style="highlight">译文</span></label>
-              <label class="style-choice"><input type="radio" name="pageStyle" value="border" /><span class="style-name">左侧竖线</span><span class="style-sample" data-style="border">译文</span></label>
+            <div class="styles" role="radiogroup" aria-label="译文样式" data-i18n-aria-label="page.style">
+              <label class="style-choice"><input type="radio" name="pageStyle" value="plain" /><span class="style-name" data-i18n="page.style.plain">无样式</span><span class="style-sample" data-style="plain" data-i18n="page.style.sample">译文</span></label>
+              <label class="style-choice"><input type="radio" name="pageStyle" value="dashed" /><span class="style-name" data-i18n="page.style.dashed">虚线下划线</span><span class="style-sample" data-style="dashed" data-i18n="page.style.sample">译文</span></label>
+              <label class="style-choice"><input type="radio" name="pageStyle" value="faded" /><span class="style-name" data-i18n="page.style.faded">淡化</span><span class="style-sample" data-style="faded" data-i18n="page.style.sample">译文</span></label>
+              <label class="style-choice"><input type="radio" name="pageStyle" value="highlight" /><span class="style-name" data-i18n="page.style.highlight">高亮</span><span class="style-sample" data-style="highlight" data-i18n="page.style.sample">译文</span></label>
+              <label class="style-choice"><input type="radio" name="pageStyle" value="border" /><span class="style-name" data-i18n="page.style.border">左侧竖线</span><span class="style-sample" data-style="border" data-i18n="page.style.sample">译文</span></label>
             </div>
-            <p class="hint">仅在双语对照时使用；仅译文模式下译文与原网页样式一致。</p>
+            <p class="hint" data-i18n="page.style.hint">仅在双语对照时使用；仅译文模式下译文与原网页样式一致。</p>
           </div>
         </div>
         <div class="row">
-          <div class="row-label">快捷键</div>
+          <div class="row-label" data-i18n="shortcut">快捷键</div>
           <div class="row-control inline">
             <span id="pageShortcut" class="shortcut"></span>
-            <button class="btn btn-sm btn-ghost" id="editPageShortcut" type="button">修改</button>
+            <button class="btn btn-sm btn-ghost" id="editPageShortcut" type="button" data-i18n="shortcut.edit">修改</button>
           </div>
         </div>
       </section>
 
       <section class="panel" aria-labelledby="sec-ui">
         <div class="panel-head">
-          <h2 id="sec-ui">交互与外观</h2>
+          <h2 id="sec-ui" data-i18n="ui.title">交互与外观</h2>
         </div>
         <div class="row">
-          <label class="row-label" for="enabled">划词翻译</label>
+          <label class="row-label" for="enabled" data-i18n="ui.selection">划词翻译</label>
           <div class="row-control inline">
             <input class="switch" id="enabled" type="checkbox" role="switch" />
-            <span class="hint inline-hint">关闭后仍可使用右键菜单与快捷键</span>
+            <span class="hint inline-hint" data-i18n="ui.selection.hint">关闭后仍可使用右键菜单与快捷键</span>
           </div>
         </div>
         <div class="row">
-          <div class="row-label">触发方式</div>
+          <div class="row-label" data-i18n="ui.trigger">触发方式</div>
           <div class="row-control">
-            <div class="choices" role="radiogroup" aria-label="触发方式">
+            <div class="choices" role="radiogroup" aria-label="触发方式" data-i18n-aria-label="ui.trigger">
               <label class="choice">
                 <input type="radio" name="trigger" value="icon" />
-                <span class="choice-title">显示图标</span>
-                <span class="choice-desc">选中后出现小图标，点击再翻译</span>
+                <span class="choice-title" data-i18n="trigger.icon">显示图标</span>
+                <span class="choice-desc" data-i18n="trigger.icon.desc">选中后出现小图标，点击再翻译</span>
               </label>
               <label class="choice">
                 <input type="radio" name="trigger" value="auto" />
-                <span class="choice-title">直接翻译</span>
-                <span class="choice-desc">选中文本后立即弹出译文</span>
+                <span class="choice-title" data-i18n="trigger.auto">直接翻译</span>
+                <span class="choice-desc" data-i18n="trigger.auto.desc">选中文本后立即弹出译文</span>
               </label>
               <label class="choice">
                 <input type="radio" name="trigger" value="manual" />
-                <span class="choice-title">仅手动</span>
-                <span class="choice-desc">只通过快捷键或右键菜单</span>
+                <span class="choice-title" data-i18n="trigger.manual">仅手动</span>
+                <span class="choice-desc" data-i18n="trigger.manual.desc">只通过快捷键或右键菜单</span>
               </label>
             </div>
           </div>
         </div>
         <div class="row">
-          <div class="row-label">主题</div>
+          <div class="row-label" data-i18n="ui.theme">主题</div>
           <div class="row-control">
-            <div class="seg" role="radiogroup" aria-label="主题">
-              <label><input type="radio" name="theme" value="auto" /><span>跟随系统</span></label>
-              <label><input type="radio" name="theme" value="light" /><span>浅色</span></label>
-              <label><input type="radio" name="theme" value="dark" /><span>深色</span></label>
+            <div class="seg" role="radiogroup" aria-label="主题" data-i18n-aria-label="ui.theme">
+              <label><input type="radio" name="theme" value="auto" /><span data-i18n="theme.auto">跟随系统</span></label>
+              <label><input type="radio" name="theme" value="light" /><span data-i18n="theme.light">浅色</span></label>
+              <label><input type="radio" name="theme" value="dark" /><span data-i18n="theme.dark">深色</span></label>
             </div>
           </div>
         </div>
         <div class="row">
-          <label class="row-label" for="fontSize">译文字号</label>
+          <div class="row-label" data-i18n="ui.language">界面语言</div>
+          <div class="row-control">
+            <div class="seg" role="radiogroup" aria-label="界面语言" data-i18n-aria-label="ui.language">
+              <label><input type="radio" name="uiLang" value="auto" /><span data-i18n="ui.language.auto">跟随浏览器</span></label>
+              <label><input type="radio" name="uiLang" value="zh-CN" /><span lang="zh-CN">简体中文</span></label>
+              <label><input type="radio" name="uiLang" value="en" /><span lang="en">English</span></label>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <label class="row-label" for="fontSize" data-i18n="ui.fontSize">译文字号</label>
           <div class="row-control inline">
             <input class="range" id="fontSize" type="range" min="12" max="20" step="1" />
             <span class="range-value" id="fontSizeValue"></span>
           </div>
         </div>
         <div class="row">
-          <div class="row-label">快捷键</div>
+          <div class="row-label" data-i18n="shortcut">快捷键</div>
           <div class="row-control inline">
             <span id="shortcut" class="shortcut"></span>
-            <button class="btn btn-sm btn-ghost" id="editShortcut" type="button">修改</button>
+            <button class="btn btn-sm btn-ghost" id="editShortcut" type="button" data-i18n="shortcut.edit">修改</button>
           </div>
         </div>
       </section>
 
       <section class="panel" aria-labelledby="sec-try">
         <div class="panel-head">
-          <h2 id="sec-try">试一试</h2>
-          <p>使用当前配置翻译一段文字，确认一切正常。</p>
+          <h2 id="sec-try" data-i18n="try.title">试一试</h2>
+          <p data-i18n="try.desc">使用当前配置翻译一段文字，确认一切正常。</p>
         </div>
         <div class="try">
           <textarea class="textarea" id="tryInput" rows="3" spellcheck="false">Glint lets you translate any text on the web with the language model you already trust.</textarea>
           <div class="try-bar">
             <span class="try-meta" id="tryMeta"></span>
             <button class="btn btn-primary" id="tryButton" type="button">
-              <span>翻译</span>
+              <span data-i18n="translate">翻译</span>
               <kbd class="kbd-on-primary" id="tryKbd"></kbd>
             </button>
           </div>
@@ -238,7 +282,7 @@
         </div>
       </section>
 
-      <footer class="foot">设置会自动保存 · API Key 只保存在本机</footer>
+      <footer class="foot" data-i18n="options.foot">设置会自动保存 · API Key 只保存在本机</footer>
     </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

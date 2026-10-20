@@ -48,5 +48,30 @@ globalThis.GLINT_DOM = (() => {
     }
   }
 
-  return Object.freeze({ h, icon, alive });
+  // Interface language from the uiLang setting; 'auto' follows the browser.
+  function localeOf(settings) {
+    return GLINT_I18N.resolveLocale(settings?.uiLang, browserLanguage());
+  }
+
+  function browserLanguage() {
+    try {
+      return chrome.i18n.getUILanguage();
+    } catch {
+      // Extension context gone.
+      return navigator.language;
+    }
+  }
+
+  // Re-labels static controls in place: data-i18n sets the text,
+  // data-i18n-title sets both title and aria-label.
+  function localize(root, t) {
+    if (!root) return;
+    for (const el of root.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+    for (const el of root.querySelectorAll('[data-i18n-title]')) {
+      el.title = t(el.dataset.i18nTitle);
+      el.setAttribute('aria-label', el.title);
+    }
+  }
+
+  return Object.freeze({ h, icon, alive, localeOf, localize });
 })();

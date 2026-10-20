@@ -11,5 +11,5 @@ const out = join(ROOT, 'dist', `glint-translate-v${version}.zip`);
 
 mkdirSync(dirname(out), { recursive: true });
 rmSync(out, { force: true });
-execFileSync('zip', ['-q', '-r', '-X', out, 'manifest.json', 'icons', 'src', '-x', '*.DS_Store'], { cwd: ROOT, stdio: 'inherit' });
+execFileSync('zip', ['-q', '-r', '-X', out, 'manifest.json', '_locales', 'icons', 'src', '-x', '*.DS_Store'], { cwd: ROOT, stdio: 'inherit' });
 console.log(`packed ${out}`);

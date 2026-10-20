@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <title>Glint 划词翻译</title>
+    <title data-i18n="app.name">Glint 划词翻译</title>
     <link rel="stylesheet" href="../ui/base.css" />
     <link rel="stylesheet" href="popup.css" />
     <script type="module" src="popup.js"></script>
@@ -13,12 +13,16 @@
         <img class="logo" src="../../icons/logo.svg" alt="" width="26" height="26" />
         <span>Glint</span>
       </div>
-      <button class="icon-btn" id="openOptions" type="button" title="设置" aria-label="打开设置">
+      <div class="quick">
+        <button class="icon-btn" id="themeToggle" type="button"></button>
+        <button class="lang-toggle" id="langToggle" type="button"><span data-locale="zh-CN">中</span><span data-locale="en">EN</span></button>
+        <button class="icon-btn" id="openOptions" type="button" title="设置" data-i18n-title="popup.settings" aria-label="打开设置" data-i18n-aria-label="popup.openSettings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
           <circle cx="12" cy="12" r="3" />
         </svg>
       </button>
+      </div>
     </header>
 
     <main>
@@ -26,9 +30,9 @@
         <div class="setup-icon">
           <img src="../../icons/logo.svg" alt="" width="40" height="40" />
         </div>
-        <h2>还差一步</h2>
-        <p>填写 API 地址和 Key，Glint 会自动识别接口和可用模型。</p>
-        <button class="btn btn-primary" id="setupButton" type="button">前往设置</button>
+        <h2 data-i18n="popup.setup.title">还差一步</h2>
+        <p data-i18n="popup.setup.desc">填写 API 地址和 Key，Glint 会自动识别接口和可用模型。</p>
+        <button class="btn btn-primary" id="setupButton" type="button" data-i18n="popup.setup.button">前往设置</button>
       </section>
 
       <section class="page-card" id="pageCard" hidden>
@@ -39,27 +43,27 @@
             </svg>
           </span>
           <span class="page-text">
-            <span class="page-title">网页翻译</span>
-            <span class="page-desc" id="pageDesc">滚动到哪里翻译到哪里</span>
+            <span class="page-title" data-i18n="page.title">网页翻译</span>
+            <span class="page-desc" id="pageDesc"></span>
           </span>
           <kbd id="pageKbd"></kbd>
         </div>
-        <div class="seg page-views" role="radiogroup" aria-label="网页显示方式">
-          <label><input type="radio" name="pageView" value="original" /><span>原文</span></label>
-          <label><input type="radio" name="pageView" value="bilingual" /><span>双语对照</span></label>
-          <label><input type="radio" name="pageView" value="translation" /><span>仅译文</span></label>
+        <div class="seg page-views" role="radiogroup" aria-label="网页显示方式" data-i18n-aria-label="page.views">
+          <label><input type="radio" name="pageView" value="original" /><span data-i18n="view.original">原文</span></label>
+          <label><input type="radio" name="pageView" value="bilingual" /><span data-i18n="view.bilingual">双语对照</span></label>
+          <label><input type="radio" name="pageView" value="translation" /><span data-i18n="view.translation">仅译文</span></label>
         </div>
       </section>
 
       <section class="translate" id="translate" hidden>
-        <textarea class="textarea" id="input" rows="4" spellcheck="false" placeholder="输入或粘贴要翻译的文本"></textarea>
+        <textarea class="textarea" id="input" rows="4" spellcheck="false" placeholder="输入或粘贴要翻译的文本" data-i18n-placeholder="popup.input"></textarea>
         <div class="actions">
           <label class="target">
-            <span class="target-label">译为</span>
+            <span class="target-label" data-i18n="popup.to">译为</span>
             <select class="select select-sm" id="targetLang"></select>
           </label>
           <button class="btn btn-primary" id="translateButton" type="button">
-            <span>翻译</span>
+            <span data-i18n="translate">翻译</span>
             <kbd class="kbd-on-primary" id="kbd"></kbd>
           </button>
         </div>
@@ -67,7 +71,7 @@
           <div class="translation" id="result"></div>
           <div class="result-foot">
             <span class="result-meta" id="resultMeta"></span>
-            <button class="icon-btn" id="copy" type="button" title="复制译文" aria-label="复制译文">
+            <button class="icon-btn" id="copy" type="button" title="复制译文" aria-label="复制译文" data-i18n-title="popup.copy" data-i18n-aria-label="popup.copy">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M11 9h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2z" />
                 <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
@@ -81,22 +85,22 @@
     <section class="toggles">
       <label class="toggle-row">
         <span>
-          <span class="toggle-title">划词翻译</span>
+          <span class="toggle-title" data-i18n="ui.selection">划词翻译</span>
           <span class="toggle-desc" id="triggerDesc"></span>
         </span>
         <input class="switch" id="enabled" type="checkbox" role="switch" />
       </label>
       <label class="toggle-row" id="siteRow" hidden>
         <span>
-          <span class="toggle-title">在此网站启用</span>
+          <span class="toggle-title" data-i18n="popup.siteEnabled">在此网站启用</span>
           <span class="toggle-desc" id="siteHost"></span>
         </span>
         <input class="switch" id="siteEnabled" type="checkbox" role="switch" />
       </label>
       <label class="toggle-row" id="ballRow" hidden>
         <span>
-          <span class="toggle-title">悬浮球</span>
-          <span class="toggle-desc">在此网站右侧显示，点击即翻译整页</span>
+          <span class="toggle-title" data-i18n="page.ball">悬浮球</span>
+          <span class="toggle-desc" data-i18n="popup.ball.desc">在此网站右侧显示，点击即翻译整页</span>
         </span>
         <input class="switch" id="ballEnabled" type="checkbox" role="switch" />
       </label>

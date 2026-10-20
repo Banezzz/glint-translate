@@ -36,6 +36,15 @@ before(async () => {
   });
   serviceWorker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
   extensionId = new URL(serviceWorker.url()).host;
+  // A fresh install opens the settings page by itself. Wait for it and close
+  // it, so it cannot take over a page a test is navigating to settings.
+  const installed = (p) => p.url().startsWith(`chrome-extension://${extensionId}/src/options/`);
+  for (let waited = 0; waited < 10_000 && !context.pages().some(installed); waited += 100) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  await Promise.all(context.pages().filter(installed).map((p) => p.close()));
+  // The interface otherwise follows the browser language; tests assert Chinese text.
+  await serviceWorker.evaluate(() => chrome.storage.local.set({ settings: { uiLang: 'zh-CN' } }));
 });
 
 after(async () => {
@@ -122,6 +131,28 @@ test('options page switches to an OpenAI endpoint pasted as a full URL', async (
   const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
   assert.equal(stored.settings.provider.resolved.type, 'openai');
   assert.equal(stored.settings.provider.resolved.baseUrl, `${mock.url}/openai/v1`);
+  await page.close();
+});
+
+test('the settings page switches its interface language live', async () => {
+  const page = await openOptions();
+  await page.locator('#connection[data-state="ok"]').waitFor({ timeout: 8000 });
+  assert.equal(await page.textContent('h1'), 'Glint 划词翻译');
+  await page.locator('input[name="uiLang"][value="en"]').check({ force: true });
+  assert.equal(await page.textContent('h1'), 'Glint Translate');
+  assert.equal(await page.getAttribute('html', 'lang'), 'en');
+  assert.equal(await page.textContent('#sec-provider'), 'Model service');
+  assert.match(await page.textContent('#connTitle'), /^Connected · OpenAI-compatible · 2 models$/);
+  assert.equal(await page.locator('#targetLang option:checked').textContent(), 'Simplified Chinese');
+  assert.equal(await page.getAttribute('#model', 'placeholder'), 'Pick from the list after detection, or type a model name');
+  await page.locator('.panel').first().screenshot({ path: join(ARTIFACTS, 'options-provider-en.png'), animations: 'disabled' });
+  const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
+  assert.equal(stored.settings.uiLang, 'en');
+
+  // Another page switching back is picked up here too.
+  await setSettings({ uiLang: 'zh-CN' });
+  await page.locator('h1', { hasText: 'Glint 划词翻译' }).waitFor({ timeout: 3000 });
+  assert.equal(await page.locator('input[name="uiLang"][value="zh-CN"]').isChecked(), true);
   await page.close();
 });
 
@@ -402,6 +433,137 @@ test('page translation explains a missing configuration on the ball', async () =
   await serviceWorker.evaluate((s) => chrome.storage.local.set(s), saved);
 });
 
+test('the card and the floating ball follow the interface language live', async () => {
+  await setSettings({ uiLang: 'en', theme: 'light' });
+  const page = await context.newPage();
+  await page.goto(`${mock.url}/page.html`);
+  await page.locator('#para').click({ clickCount: 3 });
+  assert.equal(await page.locator('glint-translate .trigger').getAttribute('title'), 'Translate selection');
+  await clickTrigger(page);
+  await page.locator('glint-translate .output:not(.streaming)').waitFor({ timeout: 8000 });
+  assert.equal(await page.locator('glint-translate .lang-source').textContent(), 'English');
+  assert.equal(await page.locator('glint-translate .lang-target span').first().textContent(), 'Simplified Chinese');
+  assert.equal(await page.locator('glint-translate .icon-btn[data-i18n-title="card.retranslate"]').getAttribute('title'), 'Translate again');
+  assert.deepEqual(await page.locator('glint-ball .view').allTextContents(), ['Original', 'Bilingual', 'Translation']);
+  assert.equal(await page.locator('glint-ball .ball').getAttribute('aria-label'), 'Translate this page');
+  await shot(page, 'card-en', { clip: { x: 0, y: 0, width: 1180, height: 560 } });
+
+  // The open card and the ball re-label themselves when the language changes.
+  await setSettings({ uiLang: 'zh-CN' });
+  await page.locator('glint-translate .lang-source', { hasText: '英语' }).waitFor({ timeout: 3000 });
+  assert.equal(await page.locator('glint-translate .icon-btn[data-i18n-title="card.retranslate"]').getAttribute('title'), '重新翻译');
+  assert.deepEqual(await page.locator('glint-ball .view').allTextContents(), ['原文', '双语', '译文']);
+  assert.equal(await page.locator('glint-ball .ball').getAttribute('aria-label'), '翻译此网页');
+  await page.close();
+  await setSettings({ theme: 'auto' });
+});
+
+test('the theme and language toggles update every page at once', async () => {
+  await setSettings({ theme: 'auto', uiLang: 'zh-CN' });
+  const article = await context.newPage();
+  await article.emulateMedia({ colorScheme: 'light' });
+  await article.goto(`${mock.url}/article.html`);
+  await article.locator('glint-ball .ball').waitFor();
+  const options = await openOptions();
+  await options.emulateMedia({ colorScheme: 'light' });
+  const popup = await context.newPage();
+  await popup.emulateMedia({ colorScheme: 'light' });
+  await popup.setViewportSize({ width: 368, height: 600 });
+  await popup.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+  await popup.locator('#translate').waitFor();
+  assert.equal(await popup.getAttribute('#themeToggle', 'title'), '主题：跟随系统（点击切换）');
+
+  // System → light → dark.
+  await popup.click('#themeToggle');
+  await popup.locator('html[data-theme="light"]').waitFor({ timeout: 3000 });
+  await popup.click('#themeToggle');
+  await popup.locator('html[data-theme="dark"]').waitFor({ timeout: 3000 });
+  assert.equal(await popup.getAttribute('#themeToggle', 'data-theme'), 'dark');
+  await options.locator('html[data-theme="dark"]').waitFor({ timeout: 3000 });
+  assert.equal(await options.locator('input[name="theme"][value="dark"]').isChecked(), true);
+  await article.locator('glint-ball .ball-root[data-theme="dark"]').waitFor({ state: 'attached', timeout: 3000 });
+  await shot(popup, 'popup-dark', { fullPage: true });
+
+  // 中 → EN, everywhere.
+  await popup.click('#langToggle');
+  await popup.locator('#translateButton span', { hasText: 'Translate' }).waitFor({ timeout: 3000 });
+  assert.equal(await popup.getAttribute('#langToggle span.on', 'data-locale'), 'en');
+  assert.equal(await popup.getAttribute('#themeToggle', 'title'), 'Theme: Dark (click to change)');
+  await options.locator('h1', { hasText: 'Glint Translate' }).waitFor({ timeout: 3000 });
+  assert.equal(await options.getAttribute('#langToggle', 'title'), 'Language: English (click to change)');
+  await article.locator('glint-ball .view', { hasText: 'Bilingual' }).waitFor({ timeout: 3000 });
+  await options.locator('.hero').screenshot({ path: join(ARTIFACTS, 'options-hero-dark-en.png'), animations: 'disabled' });
+
+  await popup.click('#langToggle');
+  await options.locator('h1', { hasText: 'Glint 划词翻译' }).waitFor({ timeout: 3000 });
+  await popup.click('#themeToggle');
+  await article.locator('glint-ball .ball-root[data-theme="light"]').waitFor({ state: 'attached', timeout: 3000 });
+  const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
+  assert.equal(stored.settings.theme, 'auto');
+  assert.equal(stored.settings.uiLang, 'zh-CN');
+  await Promise.all([article.close(), options.close(), popup.close()]);
+});
+
+test('custom prompts are edited in settings and used for requests', async () => {
+  const page = await openOptions();
+  const badge = page.locator('#promptBadge');
+  assert.match(await page.inputValue('#promptInput'), /^You are a professional translation engine\. Translate the user's text into \{\{to\}\}\./);
+  assert.equal(await badge.textContent(), '默认');
+  assert.equal(await page.locator('#promptReset').isDisabled(), true);
+  assert.equal(await page.locator('#promptFormatWrap').isHidden(), true);
+
+  // Edit the selection prompt, inserting a variable at the cursor.
+  await page.fill('#promptInput', 'Translate into {{to}} like a pirate. Fallback: ');
+  await page.locator('#promptInput').press('End');
+  await page.locator('.var-chip[data-var="alt"]').click();
+  assert.equal(await page.inputValue('#promptInput'), 'Translate into {{to}} like a pirate. Fallback: {{alt}}');
+  assert.equal(await badge.textContent(), '已自定义');
+  assert.equal(await page.locator('.prompt-tabs label.customized').count(), 1);
+
+  // "Try it" sends the rendered custom prompt.
+  await page.fill('#tryInput', 'Ahoy there, friend.');
+  await page.click('#tryButton');
+  await page.locator('#tryOutput', { hasText: '【译】Ahoy there, friend.' }).waitFor({ timeout: 8000 });
+  const selection = mock.requests.findLast((r) => r.path === '/openai/v1/chat/completions');
+  assert.equal(selection.body.messages[0].content, 'Translate into Simplified Chinese like a pirate. Fallback: English');
+  const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
+  assert.equal(stored.settings.prompts.translate, 'Translate into {{to}} like a pirate. Fallback: {{alt}}');
+
+  // The page prompt keeps its fixed output format.
+  await page.locator('input[name="promptMode"][value="page"]').check({ force: true });
+  assert.match(await page.inputValue('#promptInput'), /\{\{title\}\}/);
+  await page.locator('#promptFormatWrap summary').click();
+  assert.match(await page.textContent('#promptFormat'), /<seg id="N">/);
+  assert.deepEqual(await page.locator('.var-chip').evaluateAll((chips) => chips.map((c) => c.dataset.var)), ['to', 'title']);
+  await page.fill('#promptInput', 'Pages titled {{title}} go into {{to}}, gently.');
+  await page.locator('[aria-labelledby="sec-prompt"]').screenshot({ path: join(ARTIFACTS, 'options-prompts.png'), animations: 'disabled' });
+  await page.locator('input[name="promptMode"][value="translate"]').check({ force: true });
+  await page.waitForFunction(() => document.querySelectorAll('.prompt-tabs label.customized').length === 2);
+
+  const article = await context.newPage();
+  await article.goto(`${mock.url}/article.html`);
+  await article.bringToFront();
+  await serviceWorker.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url: `${url}/article.html` });
+    return chrome.tabs.sendMessage(tab.id, { type: 'glint:page', action: 'toggle' }, { frameId: 0 });
+  }, mock.url);
+  await translationOf(article, 'p1').waitFor({ timeout: 8000 });
+  const batch = mock.requests.findLast((r) => r.path === '/openai/v1/chat/completions');
+  assert.match(batch.body.messages[0].content, /^Pages titled Reading in two languages go into Simplified Chinese, gently\.\nThe user message contains segments wrapped as <seg id="N">/);
+  await article.close();
+
+  // Reset puts the default back and stores nothing.
+  await page.bringToFront();
+  await page.click('#promptReset');
+  assert.equal(await badge.textContent(), '默认');
+  await page.locator('input[name="promptMode"][value="page"]').check({ force: true });
+  await page.click('#promptReset');
+  await page.waitForFunction(() => !document.querySelector('.prompt-tabs label.customized'));
+  const reset = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
+  assert.deepEqual(reset.settings.prompts, { translate: '', dictionary: '', page: '' });
+  await page.close();
+});
+
 test('popup translates typed text and shows the provider status', async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 368, height: 600 });
@@ -421,12 +583,23 @@ test('popup translates typed text and shows the provider status', async () => {
   assert.equal(await page.textContent('#result .dict-word'), 'serendipity');
   assert.equal(await page.textContent('#result .dict-pos'), 'n.');
   await shot(page, 'popup-dictionary', { fullPage: true });
+
+  // Switching the interface language re-renders the open popup.
+  await setSettings({ uiLang: 'en' });
+  await page.locator('#translateButton span', { hasText: 'Translate' }).waitFor({ timeout: 3000 });
+  assert.equal(await page.textContent('#statusText'), 'gpt-4o-mini · OpenAI-compatible');
+  assert.equal(await page.textContent('#resultMeta'), 'English → Simplified Chinese');
+  assert.equal(await page.locator('#targetLang option:checked').textContent(), 'Simplified Chinese');
+  assert.equal(await page.getAttribute('#input', 'placeholder'), 'Type or paste text to translate');
+  await shot(page, 'popup-en', { fullPage: true });
+  await setSettings({ uiLang: 'zh-CN' });
   await page.close();
 });
 
 test('popup shows the setup state when nothing is configured', async () => {
   const saved = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
   await serviceWorker.evaluate(() => chrome.storage.local.clear());
+  await setSettings({ uiLang: 'zh-CN' });
   const page = await context.newPage();
   await page.setViewportSize({ width: 368, height: 520 });
   await page.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);

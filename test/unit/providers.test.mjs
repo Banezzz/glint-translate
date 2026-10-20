@@ -183,7 +183,7 @@ test('reports an invalid key with the detected protocol', async () => {
   const r = await detectEndpoint({ baseUrl: 'https://api.anthropic.com', apiKey: 'wrong', fetchImpl });
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'auth');
-  assert.match(r.error.message, /Anthropic/);
+  assert.deepEqual(r.error.params, { protocol: 'anthropic' });
   assert.equal(r.error.detail, 'invalid x-api-key');
 });
 
@@ -196,6 +196,7 @@ test('reports unreachable hosts without probing further', async () => {
   const r = await detectEndpoint({ baseUrl: 'https://down.example.com', apiKey: 'k', fetchImpl });
   assert.equal(r.ok, false);
   assert.equal(r.error.code, 'network');
+  assert.equal(r.error.params.timedOut, false);
   assert.equal(calls.length, 2); // one base, both protocols
 });
 
@@ -210,7 +211,7 @@ test('falls back to the chat endpoint when /models is missing', async () => {
   assert.equal(r.ok, true);
   assert.equal(r.type, 'openai');
   assert.deepEqual(r.models, []);
-  assert.match(r.warning, /手动输入/);
+  assert.equal(r.warning, 'no_models');
 });
 
 test('reports not_found when nothing answers', async () => {

@@ -5,11 +5,6 @@ export const OPENAI = 'openai';
 export const ANTHROPIC = 'anthropic';
 export const ANTHROPIC_VERSION = '2023-06-01';
 
-export const PROTOCOL_LABELS = {
-  [OPENAI]: 'OpenAI 兼容',
-  [ANTHROPIC]: 'Anthropic 兼容',
-};
-
 const ENDPOINT_SUFFIXES = ['/chat/completions', '/completions', '/messages', '/models', '/responses', '/embeddings'];
 const VERSION_SEGMENT = /\/v\d+(?:\.\d+)?(?:alpha|beta)?\d*$/i;
 const LOCAL_HOST = /^(localhost|127\.|0\.0\.0\.0|\[::1\]|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i;
@@ -166,7 +161,7 @@ function withTimeout(signal, timeoutMs) {
 
 function networkFailure(err) {
   const timedOut = err?.name === 'TimeoutError';
-  return { network: true, timedOut, message: timedOut ? '连接超时' : String(err?.message || err) };
+  return { network: true, timedOut, message: timedOut ? '' : String(err?.message || err) };
 }
 
 async function probeModels({ base, flavor, apiKey, fetchImpl, timeoutMs, signal }) {
@@ -228,39 +223,29 @@ function pickListResult(results, forced, hint) {
   return { ...chosen, type: chosen.list.shape };
 }
 
+// Failures are described by code and params; the settings page words them.
 function describeFailure(attempts) {
   const auth = attempts.find((a) => a.status === 401 || a.status === 403);
-  if (auth) {
-    const protocol = auth.shape ? `（${PROTOCOL_LABELS[auth.shape]}接口）` : '';
-    return { code: 'auth', message: `API Key 无效或没有访问权限${protocol}`, detail: auth.message };
-  }
+  if (auth) return { code: 'auth', params: { protocol: auth.shape || '' }, detail: auth.message };
   const rate = attempts.find((a) => a.status === 429);
-  if (rate) return { code: 'rate_limit', message: '请求过于频繁或额度不足，请稍后再试', detail: rate.message };
+  if (rate) return { code: 'rate_limit', params: {}, detail: rate.message };
   const server = attempts.find((a) => a.status >= 500);
-  if (server) return { code: 'server', message: `服务端错误（HTTP ${server.status}）`, detail: server.message };
+  if (server) return { code: 'server', params: { status: server.status }, detail: server.message };
   if (attempts.length && attempts.every((a) => a.network)) {
-    const timedOut = attempts.some((a) => a.timedOut);
-    return {
-      code: 'network',
-      message: timedOut ? '连接超时，请检查地址或网络' : '无法连接到该地址，请检查地址或网络',
-      detail: attempts[0].message,
-    };
+    return { code: 'network', params: { timedOut: attempts.some((a) => a.timedOut) }, detail: attempts[0].message };
   }
-  return {
-    code: 'not_found',
-    message: '没有找到兼容的 OpenAI / Anthropic 接口，请检查地址（通常以 /v1 结尾）',
-    detail: attempts.find((a) => a.message)?.message || '',
-  };
+  return { code: 'not_found', params: {}, detail: attempts.find((a) => a.message)?.message || '' };
 }
 
 /**
  * Detects which protocol an endpoint speaks and lists its models.
- * Resolves to { ok: true, type, baseUrl, models, latencyMs, warning? }
- * or { ok: false, error: { code, message, detail } }.
+ * Resolves to { ok: true, type, baseUrl, models, latencyMs, warning }
+ * (warning: '' | 'empty_models' | 'no_models')
+ * or { ok: false, error: { code, params, detail } }.
  */
 export async function detectEndpoint({ baseUrl, apiKey = '', type = 'auto', fetchImpl = fetch, timeoutMs = 10000, signal }) {
   const normalized = normalizeBaseUrl(baseUrl);
-  if (!normalized) return { ok: false, error: { code: 'invalid_url', message: '请输入有效的 API 地址', detail: '' } };
+  if (!normalized) return { ok: false, error: { code: 'invalid_url', params: {}, detail: '' } };
   const forced = type === OPENAI || type === ANTHROPIC ? type : null;
   const hint = forced ?? guessTypeFromUrl(normalized);
   const flavors = forced ? [forced] : hint === ANTHROPIC ? [ANTHROPIC, OPENAI] : [OPENAI, ANTHROPIC];
@@ -282,7 +267,7 @@ export async function detectEndpoint({ baseUrl, apiKey = '', type = 'auto', fetc
         normalized,
         models,
         latencyMs: hit.latencyMs,
-        warning: models.length ? '' : '该服务返回的模型列表为空，请手动输入模型名称',
+        warning: models.length ? '' : 'empty_models',
       };
     }
     // A network failure on the first candidate means the host is
@@ -304,7 +289,7 @@ export async function detectEndpoint({ baseUrl, apiKey = '', type = 'auto', fetc
           normalized,
           models: [],
           latencyMs: found.latencyMs,
-          warning: '该服务未提供模型列表，请手动输入模型名称',
+          warning: 'no_models',
         };
       }
     }

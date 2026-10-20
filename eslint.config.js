@@ -28,11 +28,12 @@ export default [
         GLINT_BALL_CSS: 'readonly',
         GLINT_ICONS: 'readonly',
         GLINT_DOM: 'readonly',
+        GLINT_I18N: 'readonly',
       },
     },
   },
   {
-    files: ['src/shared/languages.js', 'src/shared/dictionary.js'],
+    files: ['src/shared/languages.js', 'src/shared/dictionary.js', 'src/shared/i18n.js'],
     languageOptions: { sourceType: 'script' },
   },
   {

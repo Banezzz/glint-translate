@@ -1,3 +1,4 @@
+import '../shared/i18n.js';
 import { detectSourceLanguage, resolveTargets } from '../shared/lang.js';
 import { buildPagePrompt, buildSystemPrompt, clampInput, isDictionaryCandidate } from '../shared/prompt.js';
 import { MAX_BATCH_CHARS, MAX_BATCH_SEGMENTS, buildSegmentsInput, createSegmentParser } from '../shared/segments.js';
@@ -21,16 +22,21 @@ function remember(store, limit, key, value) {
   if (store.size > limit) store.delete(store.keys().next().value);
 }
 
-const NOT_CONFIGURED = { type: 'error', code: 'not_configured', message: '还没有配置模型服务', detail: '在设置页填写 API 地址、Key 并选择模型后即可使用' };
+const { errorText, resolveLocale, translate } = globalThis.GLINT_I18N;
 
-function errorPayload(err) {
-  const known = err instanceof TranslationError;
-  return {
-    type: 'error',
-    code: known ? err.code : 'unknown',
-    message: known ? err.message : '翻译失败',
-    detail: known ? err.detail : String(err?.message || err),
-  };
+function localeOf(settings) {
+  return resolveLocale(settings.uiLang, chrome.i18n.getUILanguage());
+}
+
+// Error messages are sent ready to display, in the interface language.
+function errorPayload(err, locale) {
+  const code = err instanceof TranslationError ? err.code : 'unknown';
+  const detail = err instanceof TranslationError ? err.detail : String(err?.message || err);
+  return { type: 'error', code, message: errorText(locale, code), detail };
+}
+
+function notConfigured(locale) {
+  return { type: 'error', code: 'not_configured', message: errorText(locale, 'not_configured'), detail: translate(locale, 'error.not_configured.detail') };
 }
 
 // Extension API calls reset the worker's idle timer; slow first tokens
@@ -42,8 +48,9 @@ function keepAlive() {
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   await chrome.contextMenus.removeAll();
-  chrome.contextMenus.create({ id: MENU_ID, title: '用 Glint 翻译“%s”', contexts: ['selection'] });
-  chrome.contextMenus.create({ id: PAGE_MENU_ID, title: '翻译此网页（双语对照）/ 显示原文', contexts: ['page'] });
+  const locale = localeOf(await loadSettings());
+  chrome.contextMenus.create({ id: MENU_ID, title: translate(locale, 'menu.selection'), contexts: ['selection'] });
+  chrome.contextMenus.create({ id: PAGE_MENU_ID, title: translate(locale, 'menu.page'), contexts: ['page'] });
   if (reason === 'install' || reason === 'update') await injectIntoOpenTabs();
   if (reason === 'install' && !isProviderReady(await loadSettings())) chrome.runtime.openOptionsPage();
 });
@@ -75,6 +82,15 @@ async function sendToTab(tabId, message, frameId) {
     }
   }
 }
+
+// Menu titles follow the interface language.
+chrome.storage.onChanged.addListener((changes, area) => {
+  const { oldValue, newValue } = changes.settings || {};
+  if (area !== 'local' || !newValue || oldValue?.uiLang === newValue.uiLang) return;
+  const locale = localeOf(newValue);
+  chrome.contextMenus.update(MENU_ID, { title: translate(locale, 'menu.selection') }).catch(() => {});
+  chrome.contextMenus.update(PAGE_MENU_ID, { title: translate(locale, 'menu.page') }).catch(() => {});
+});
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (tab?.id === undefined) return;
@@ -136,13 +152,14 @@ async function runTranslation(port, message, signal) {
   };
 
   const settings = await loadSettings();
+  const locale = localeOf(settings);
   if (!isProviderReady(settings)) {
-    post(NOT_CONFIGURED);
+    post(notConfigured(locale));
     return;
   }
   const text = clampInput(message.text);
   if (!text) {
-    post({ type: 'error', code: 'empty', message: '没有可翻译的文本', detail: '' });
+    post({ type: 'error', code: 'empty', message: errorText(locale, 'empty'), detail: '' });
     return;
   }
 
@@ -157,7 +174,8 @@ async function runTranslation(port, message, signal) {
   const mode = settings.dictionary && isDictionaryCandidate(text) ? 'dictionary' : 'translate';
   post({ type: 'meta', sourceLang, targetLang: target, mode, model: provider.model, protocol: provider.type });
 
-  const key = JSON.stringify([provider.baseUrl, provider.model, mode, target, text]);
+  const template = settings.prompts[mode] || '';
+  const key = JSON.stringify([provider.baseUrl, provider.model, mode, template, target, text]);
   if (!message.fresh && cache.has(key)) {
     const cached = cache.get(key);
     remember(cache, 100, key, cached);
@@ -168,17 +186,18 @@ async function runTranslation(port, message, signal) {
 
   const release = keepAlive();
   try {
-    const request = buildChatRequest({ ...provider, system: buildSystemPrompt({ mode, target, fallback }), text });
+    const system = buildSystemPrompt({ mode, target, fallback, source: sourceLang, template });
+    const request = buildChatRequest({ ...provider, system, text });
     let full = '';
     for await (const delta of streamChat({ request, signal })) {
       full += delta;
       post({ type: 'delta', text: delta });
     }
-    if (!full.trim()) throw new TranslationError('empty_response', '模型没有返回内容', '');
+    if (!full.trim()) throw new TranslationError('empty_response');
     remember(cache, 100, key, full);
     post({ type: 'done', text: full, cached: false });
   } catch (err) {
-    if (!signal.aborted) post(errorPayload(err));
+    if (!signal.aborted) post(errorPayload(err, locale));
   } finally {
     release();
   }
@@ -220,8 +239,9 @@ async function runBatch(port, message, signal) {
   };
 
   const settings = await loadSettings();
+  const locale = localeOf(settings);
   if (!isProviderReady(settings)) {
-    post(NOT_CONFIGURED);
+    post(notConfigured(locale));
     return;
   }
   const segments = (Array.isArray(message.segments) ? message.segments : [])
@@ -229,7 +249,8 @@ async function runBatch(port, message, signal) {
     .map((text) => String(text).trim().slice(0, MAX_BATCH_CHARS));
   const provider = effectiveProvider(settings.provider);
   const target = message.targetLang || settings.targetLang;
-  const keyOf = (text) => JSON.stringify([provider.baseUrl, provider.model, 'page', target, text]);
+  const template = settings.prompts.page || '';
+  const keyOf = (text) => JSON.stringify([provider.baseUrl, provider.model, 'page', template, target, text]);
 
   // Serve what is cached; only the rest goes to the model.
   const pending = [];
@@ -247,7 +268,7 @@ async function runBatch(port, message, signal) {
   try {
     const request = buildChatRequest({
       ...provider,
-      system: buildPagePrompt({ target, title: message.title }),
+      system: buildPagePrompt({ target, title: message.title, template }),
       text: buildSegmentsInput(pending.map((i) => segments[i])),
       maxTokens: 4096,
     });
@@ -263,7 +284,7 @@ async function runBatch(port, message, signal) {
     emit(parser.finish());
     post({ type: 'done', missing: parser.missing().map((i) => pending[i]) });
   } catch (err) {
-    if (!signal.aborted) post(errorPayload(err));
+    if (!signal.aborted) post(errorPayload(err, locale));
   } finally {
     release();
   }

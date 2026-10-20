@@ -1,7 +1,10 @@
 import { LANGUAGES, languageLabel } from '../shared/lang.js';
-import { chooseModel, detectEndpoint, normalizeBaseUrl, PROTOCOL_LABELS } from '../shared/providers.js';
+import { DEFAULT_PROMPTS, PROMPT_FORMATS, PROMPT_MODES, PROMPT_VARIABLES } from '../shared/prompt.js';
+import { chooseModel, detectEndpoint, normalizeBaseUrl } from '../shared/providers.js';
 import { loadSettings, updateSettings } from '../shared/settings.js';
 import { applyTheme, debounce, relativeTime, renderResult, translateStream } from '../ui/common.js';
+import { applyI18n, getLocale, protocolLabel, setLocale, t } from '../ui/i18n.js';
+import { initQuickToggles } from '../ui/quick-toggles.js';
 
 const PRESETS = [
   { name: 'OpenAI', url: 'https://api.openai.com/v1' },
@@ -9,7 +12,7 @@ const PRESETS = [
   { name: 'DeepSeek', url: 'https://api.deepseek.com/v1' },
   { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
   { name: 'Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai' },
-  { name: '硅基流动', url: 'https://api.siliconflow.cn/v1' },
+  { name: 'SiliconFlow', key: 'preset.siliconflow', url: 'https://api.siliconflow.cn/v1' },
   { name: 'Ollama', url: 'http://localhost:11434/v1' },
 ];
 
@@ -36,7 +39,7 @@ function toast(message) {
 function save(patch, { quiet = false } = {}) {
   saveQueue = saveQueue.then(async () => {
     settings = await updateSettings(patch);
-    if (!quiet) toast('已保存');
+    if (!quiet) toast(t('toast.saved'));
   });
   return saveQueue;
 }
@@ -51,6 +54,7 @@ function flushPendingSaves() {
   saveBaseUrl.flush();
   saveApiKey.flush();
   saveModel.flush();
+  savePrompt.flush();
   return saveQueue;
 }
 
@@ -67,7 +71,7 @@ function renderPresets() {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'preset';
-      button.textContent = preset.name;
+      button.textContent = preset.key ? t(preset.key) : preset.name;
       button.title = preset.url;
       button.setAttribute('aria-pressed', String(normalizeBaseUrl(preset.url) === normalized));
       button.addEventListener('click', () => {
@@ -100,21 +104,34 @@ function renderConnectionFromSettings() {
   const { provider } = settings;
   const normalized = normalizeBaseUrl(provider.baseUrl);
   if (!normalized) {
-    setConnection('idle', { title: provider.baseUrl ? '地址格式不正确' : '填写 API 地址后自动检测' });
+    setConnection('idle', { title: t(provider.baseUrl ? 'conn.badUrl' : 'conn.idle') });
     return;
   }
   const resolved = provider.resolved?.from === normalized ? provider.resolved : null;
   if (!resolved) {
-    setConnection('idle', { title: '尚未检测', sub: normalized });
+    setConnection('idle', { title: t('conn.unchecked'), sub: normalized });
     return;
   }
   const type = provider.type === 'auto' ? resolved.type : provider.type;
   const count = provider.models.length;
-  const title = `已连接 · ${PROTOCOL_LABELS[type]}${count ? ` · ${count} 个模型` : ''}`;
-  const details = [resolved.baseUrl, resolved.latencyMs ? `${resolved.latencyMs} ms` : '', resolved.checkedAt ? `${relativeTime(resolved.checkedAt)}检测` : '']
+  const title = [t('conn.connected', { protocol: protocolLabel(type) }), count ? t('model.count', { count }) : ''].filter(Boolean).join(' · ');
+  const details = [resolved.baseUrl, resolved.latencyMs ? `${resolved.latencyMs} ms` : '', resolved.checkedAt ? t('conn.checkedAt', { time: relativeTime(resolved.checkedAt) }) : '']
     .filter(Boolean)
     .join(' · ');
-  setConnection(resolved.warning ? 'warn' : 'ok', { title, sub: resolved.warning || details });
+  setConnection(resolved.warning ? 'warn' : 'ok', { title, sub: resolved.warning ? warningText(resolved.warning) : details });
+}
+
+// Detection used to store the warning as text; newer versions store a code.
+function warningText(warning) {
+  const key = `detect.warning.${warning}`;
+  const text = t(key);
+  return text === key ? warning : text;
+}
+
+function detectErrorTitle({ code, params = {} }) {
+  if (code === 'auth') return params.protocol ? t('detect.auth_protocol', { protocol: protocolLabel(params.protocol) }) : t('detect.auth');
+  if (code === 'network') return t(params.timedOut ? 'detect.timeout' : 'detect.unreachable');
+  return t(`detect.${code}`, params);
 }
 
 // Typing invalidates the shown status right away; detection runs once the
@@ -125,10 +142,10 @@ function queueDetect() {
   const normalized = normalizeBaseUrl($('baseUrl').value);
   if (!normalized) {
     scheduleDetect.cancel();
-    setConnection('idle', { title: $('baseUrl').value.trim() ? '地址格式不正确' : '填写 API 地址后自动检测' });
+    setConnection('idle', { title: t($('baseUrl').value.trim() ? 'conn.badUrl' : 'conn.idle') });
     return;
   }
-  setConnection('checking', { title: '正在检测接口与模型…', sub: normalized });
+  setConnection('checking', { title: t('conn.checking'), sub: normalized });
   scheduleDetect();
 }
 
@@ -143,20 +160,20 @@ async function runDetect() {
   detectController?.abort();
   detectController = new AbortController();
   const seq = ++detectSeq;
-  setConnection('checking', { title: '正在检测接口与模型…', sub: normalizeBaseUrl(baseUrl) });
+  setConnection('checking', { title: t('conn.checking'), sub: normalizeBaseUrl(baseUrl) });
 
   let result;
   try {
     result = await detectEndpoint({ baseUrl, apiKey, type: currentType(), signal: detectController.signal });
   } catch (err) {
     if (seq !== detectSeq) return;
-    result = { ok: false, error: { message: '检测失败', detail: String(err?.message || err) } };
+    result = { ok: false, error: { code: 'failed', params: {}, detail: String(err?.message || err) } };
   }
   if (seq !== detectSeq) return;
 
   if (!result.ok) {
     await save({ provider: { baseUrl, apiKey, resolved: null } }, { quiet: true });
-    setConnection('error', { title: result.error.message, sub: result.error.detail });
+    setConnection('error', { title: detectErrorTitle(result.error), sub: result.error.detail });
     return;
   }
   saveModel.cancel();
@@ -183,7 +200,7 @@ async function runDetect() {
   $('model').value = model;
   renderModelCount();
   renderConnectionFromSettings();
-  toast(result.models.length ? `检测成功，已获取 ${result.models.length} 个模型` : '检测成功');
+  toast(result.models.length ? t('toast.detectedModels', { count: result.models.length }) : t('toast.detected'));
 }
 
 // ------------------------------------------------------------ model combo
@@ -194,7 +211,7 @@ let comboItems = [];
 function renderModelCount() {
   const count = settings.provider.models.length;
   $('modelCount').hidden = !count;
-  $('modelCount').textContent = `${count} 个模型`;
+  $('modelCount').textContent = t('model.count', { count });
 }
 
 function highlight(text, query) {
@@ -240,7 +257,7 @@ function openCombo({ filter = true } = {}) {
           li.addEventListener('click', () => pickModel(model.id));
           return li;
         })
-      : [Object.assign(document.createElement('li'), { className: 'combo-empty', textContent: '没有匹配的模型，将直接使用你输入的名称' })]),
+      : [Object.assign(document.createElement('li'), { className: 'combo-empty', textContent: t('model.noMatch') })]),
   );
   list.hidden = false;
   $('model').setAttribute('aria-expanded', 'true');
@@ -305,7 +322,7 @@ function fillLanguageSelect(select, value) {
     ...LANGUAGES.map((lang) => {
       const option = document.createElement('option');
       option.value = lang.code;
-      option.textContent = lang.label;
+      option.textContent = languageLabel(lang.code, getLocale());
       return option;
     }),
   );
@@ -318,7 +335,7 @@ async function renderShortcuts() {
     const shortcut = commands.find((c) => c.name === name)?.shortcut || '';
     const el = $(id);
     if (!shortcut) {
-      el.textContent = '未设置';
+      el.textContent = t('shortcut.none');
       continue;
     }
     const keys = shortcut.includes('+') ? shortcut.split('+') : [...shortcut];
@@ -328,14 +345,90 @@ async function renderShortcuts() {
 
 function renderBallHint() {
   const hidden = settings.ballDisabledSites.length;
-  $('ballHint').textContent = hidden
-    ? `在网页右侧显示，点击即翻译整页 · 已在 ${hidden} 个网站隐藏（可在弹出面板中恢复）`
-    : '在网页右侧显示，点击即翻译整页，可上下拖动';
+  $('ballHint').textContent = hidden ? t('page.ball.hintHidden', { count: hidden }) : t('page.ball.hint');
 }
 
 function checkRadio(name, value) {
   const input = document.querySelector(`input[name="${name}"][value="${value}"]`);
   if (input) input.checked = true;
+}
+
+// ----------------------------------------------------------------- prompts
+
+let promptMode = 'translate';
+
+// What gets stored: '' while the text matches the built-in default, so
+// untouched prompts follow future improvements.
+function customPrompt(mode, text) {
+  const trimmed = text.trim();
+  return trimmed === DEFAULT_PROMPTS[mode].trim() ? '' : trimmed;
+}
+
+const savePrompt = debounce(() => {
+  save({ prompts: { [promptMode]: customPrompt(promptMode, $('promptInput').value) } });
+}, 600);
+
+function renderPromptStatus() {
+  const custom = Boolean(customPrompt(promptMode, $('promptInput').value));
+  $('promptBadge').textContent = t(custom ? 'prompt.custom' : 'prompt.default');
+  $('promptBadge').dataset.state = custom ? 'custom' : 'default';
+  $('promptReset').disabled = !custom;
+  for (const radio of document.querySelectorAll('input[name="promptMode"]')) {
+    const stored = radio.value === promptMode ? custom : Boolean(settings.prompts[radio.value]);
+    radio.parentElement.classList.toggle('customized', stored);
+  }
+}
+
+function renderPromptVars() {
+  $('promptVars').replaceChildren(
+    ...PROMPT_VARIABLES[promptMode].map((name) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'var-chip';
+      chip.dataset.var = name;
+      chip.append(Object.assign(document.createElement('code'), { textContent: `{{${name}}}` }), t(`prompt.var.${name}`));
+      chip.addEventListener('click', () => insertVariable(name));
+      return chip;
+    }),
+  );
+}
+
+// Shows the prompt of the selected mode; called on load and on tab switch.
+function renderPromptEditor() {
+  $('promptInput').value = settings.prompts[promptMode] || DEFAULT_PROMPTS[promptMode];
+  $('promptFormatWrap').hidden = !PROMPT_FORMATS[promptMode];
+  $('promptFormat').textContent = PROMPT_FORMATS[promptMode];
+  renderPromptVars();
+  renderPromptStatus();
+}
+
+function insertVariable(name) {
+  const input = $('promptInput');
+  input.focus();
+  input.setRangeText(`{{${name}}}`, input.selectionStart, input.selectionEnd, 'end');
+  input.dispatchEvent(new Event('input'));
+}
+
+function wirePromptEditor() {
+  for (const radio of document.querySelectorAll('input[name="promptMode"]')) {
+    radio.addEventListener('change', () => {
+      savePrompt.flush();
+      promptMode = PROMPT_MODES.includes(radio.value) ? radio.value : 'translate';
+      renderPromptEditor();
+    });
+  }
+  $('promptInput').addEventListener('input', () => {
+    renderPromptStatus();
+    savePrompt();
+  });
+  $('promptReset').addEventListener('click', () => {
+    savePrompt.cancel();
+    $('promptInput').value = DEFAULT_PROMPTS[promptMode];
+    save({ prompts: { [promptMode]: '' } }, { quiet: true });
+    toast(t('toast.promptReset'));
+    renderPromptStatus();
+  });
+  renderPromptEditor();
 }
 
 // ------------------------------------------------------------------ try it
@@ -353,7 +446,7 @@ async function runTry() {
   $('tryOutputWrap').hidden = false;
   output.className = 'translation';
   renderResult(output, { mode, text: '', source: text, streaming: true });
-  $('tryMeta').textContent = '翻译中…';
+  $('tryMeta').textContent = t('translating');
   $('tryButton').disabled = true;
   const finish = () => {
     $('tryButton').disabled = false;
@@ -364,7 +457,7 @@ async function runTry() {
     {
       onMeta: (meta) => {
         mode = meta.mode;
-        $('tryMeta').textContent = `${languageLabel(meta.sourceLang)} → ${languageLabel(meta.targetLang)} · ${meta.model}`;
+        $('tryMeta').textContent = `${languageLabel(meta.sourceLang, getLocale())} → ${languageLabel(meta.targetLang, getLocale())} · ${meta.model}`;
       },
       onDelta: (delta) => {
         raw += delta;
@@ -390,11 +483,30 @@ async function runTry() {
   );
 }
 
+// ---------------------------------------------------------------- language
+
+// Re-renders everything that carries text, in place.
+function applyLocale(preference) {
+  setLocale(preference);
+  applyI18n();
+  renderPresets();
+  renderModelCount();
+  renderConnectionFromSettings();
+  renderBallHint();
+  renderShortcuts();
+  renderPromptVars();
+  renderPromptStatus();
+  fillLanguageSelect($('targetLang'), $('targetLang').value);
+  fillLanguageSelect($('secondLang'), $('secondLang').value);
+}
+
 // -------------------------------------------------------------------- init
 
 async function init() {
   settings = await loadSettings();
   const { provider } = settings;
+  setLocale(settings.uiLang);
+  applyI18n();
   applyTheme(settings.theme);
   $('version').textContent = `v${chrome.runtime.getManifest().version}`;
 
@@ -412,6 +524,7 @@ async function init() {
   $('enabled').checked = settings.enabled;
   checkRadio('trigger', settings.trigger);
   checkRadio('theme', settings.theme);
+  checkRadio('uiLang', settings.uiLang);
   $('fontSize').value = settings.fontSize;
   $('fontSizeValue').textContent = `${settings.fontSize} px`;
   $('floatBall').checked = settings.floatBall;
@@ -449,6 +562,12 @@ async function init() {
   for (const radio of document.querySelectorAll('input[name="trigger"]')) {
     radio.addEventListener('change', () => save({ trigger: radio.value }));
   }
+  for (const radio of document.querySelectorAll('input[name="uiLang"]')) {
+    radio.addEventListener('change', () => {
+      save({ uiLang: radio.value }, { quiet: true });
+      applyLocale(radio.value);
+    });
+  }
   for (const radio of document.querySelectorAll('input[name="theme"]')) {
     radio.addEventListener('change', () => {
       applyTheme(radio.value);
@@ -466,6 +585,7 @@ async function init() {
     radio.addEventListener('change', () => save({ pageStyle: radio.value }));
   }
 
+  wirePromptEditor();
   $('tryButton').addEventListener('click', runTry);
   $('tryInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -474,13 +594,28 @@ async function init() {
     }
   });
 
+  const renderQuick = initQuickToggles({ themeButton: $('themeToggle'), languageButton: $('langToggle'), getSettings: () => settings });
+
   // Keep in sync with changes made elsewhere (e.g. the popup).
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes.settings?.newValue) return;
     const next = changes.settings.newValue;
+    settings = { ...settings, ...next };
+    if (next.theme && next.theme !== document.querySelector('input[name="theme"]:checked')?.value) {
+      checkRadio('theme', next.theme);
+      applyTheme(next.theme);
+    }
+    // After a possible language switch below, so titles use the new language.
+    queueMicrotask(renderQuick);
+    // Tab markers reflect what is stored, which lands after a debounced save.
+    renderPromptStatus();
     if (next.enabled !== $('enabled').checked) $('enabled').checked = next.enabled;
     if (next.targetLang !== $('targetLang').value) $('targetLang').value = next.targetLang;
     if (next.floatBall !== undefined && next.floatBall !== $('floatBall').checked) $('floatBall').checked = next.floatBall;
+    if (next.uiLang && next.uiLang !== document.querySelector('input[name="uiLang"]:checked')?.value) {
+      checkRadio('uiLang', next.uiLang);
+      applyLocale(next.uiLang);
+    }
   });
 
   // Re-check a configured endpoint whose detection is missing or stale.
