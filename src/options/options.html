@@ -129,6 +129,36 @@
         </div>
       </section>
 
+      <section class="panel" aria-labelledby="sec-prompt">
+        <div class="panel-head">
+          <h2 id="sec-prompt" data-i18n="prompt.title">提示词</h2>
+          <p data-i18n="prompt.desc">自定义发给模型的系统提示词，用变量插入语言和网页信息。与默认内容相同时会跟随插件更新。</p>
+        </div>
+        <div class="prompt-editor">
+          <div class="prompt-top">
+            <div class="seg prompt-tabs" role="radiogroup" aria-label="提示词类型" data-i18n-aria-label="prompt.mode">
+              <label><input type="radio" name="promptMode" value="translate" checked /><span data-i18n="prompt.mode.translate">划词翻译</span></label>
+              <label><input type="radio" name="promptMode" value="dictionary" /><span data-i18n="prompt.mode.dictionary">单词词典</span></label>
+              <label><input type="radio" name="promptMode" value="page" /><span data-i18n="prompt.mode.page">网页翻译</span></label>
+            </div>
+            <div class="prompt-status">
+              <span class="badge" id="promptBadge"></span>
+              <button class="btn btn-sm btn-ghost" id="promptReset" type="button" data-i18n="prompt.reset">恢复默认</button>
+            </div>
+          </div>
+          <div class="prompt-vars">
+            <span class="prompt-vars-label" data-i18n="prompt.vars">插入变量</span>
+            <span id="promptVars"></span>
+          </div>
+          <textarea class="textarea mono prompt-input" id="promptInput" rows="9" spellcheck="false"></textarea>
+          <details class="prompt-format" id="promptFormatWrap">
+            <summary data-i18n="prompt.format">固定的输出格式（自动附加在末尾，确保结果能被正确解析）</summary>
+            <pre id="promptFormat"></pre>
+          </details>
+          <p class="hint" data-i18n="prompt.hint">变量没有值时（例如网页没有标题），包含它的那一行会被省略。</p>
+        </div>
+      </section>
+
       <section class="panel" aria-labelledby="sec-page">
         <div class="panel-head">
           <h2 id="sec-page" data-i18n="page.title">网页翻译</h2>

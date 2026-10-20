@@ -1,4 +1,5 @@
 import { LANGUAGES, languageLabel } from '../shared/lang.js';
+import { DEFAULT_PROMPTS, PROMPT_FORMATS, PROMPT_MODES, PROMPT_VARIABLES } from '../shared/prompt.js';
 import { chooseModel, detectEndpoint, normalizeBaseUrl } from '../shared/providers.js';
 import { loadSettings, updateSettings } from '../shared/settings.js';
 import { applyTheme, debounce, relativeTime, renderResult, translateStream } from '../ui/common.js';
@@ -53,6 +54,7 @@ function flushPendingSaves() {
   saveBaseUrl.flush();
   saveApiKey.flush();
   saveModel.flush();
+  savePrompt.flush();
   return saveQueue;
 }
 
@@ -351,6 +353,84 @@ function checkRadio(name, value) {
   if (input) input.checked = true;
 }
 
+// ----------------------------------------------------------------- prompts
+
+let promptMode = 'translate';
+
+// What gets stored: '' while the text matches the built-in default, so
+// untouched prompts follow future improvements.
+function customPrompt(mode, text) {
+  const trimmed = text.trim();
+  return trimmed === DEFAULT_PROMPTS[mode].trim() ? '' : trimmed;
+}
+
+const savePrompt = debounce(() => {
+  save({ prompts: { [promptMode]: customPrompt(promptMode, $('promptInput').value) } });
+}, 600);
+
+function renderPromptStatus() {
+  const custom = Boolean(customPrompt(promptMode, $('promptInput').value));
+  $('promptBadge').textContent = t(custom ? 'prompt.custom' : 'prompt.default');
+  $('promptBadge').dataset.state = custom ? 'custom' : 'default';
+  $('promptReset').disabled = !custom;
+  for (const radio of document.querySelectorAll('input[name="promptMode"]')) {
+    const stored = radio.value === promptMode ? custom : Boolean(settings.prompts[radio.value]);
+    radio.parentElement.classList.toggle('customized', stored);
+  }
+}
+
+function renderPromptVars() {
+  $('promptVars').replaceChildren(
+    ...PROMPT_VARIABLES[promptMode].map((name) => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'var-chip';
+      chip.dataset.var = name;
+      chip.append(Object.assign(document.createElement('code'), { textContent: `{{${name}}}` }), t(`prompt.var.${name}`));
+      chip.addEventListener('click', () => insertVariable(name));
+      return chip;
+    }),
+  );
+}
+
+// Shows the prompt of the selected mode; called on load and on tab switch.
+function renderPromptEditor() {
+  $('promptInput').value = settings.prompts[promptMode] || DEFAULT_PROMPTS[promptMode];
+  $('promptFormatWrap').hidden = !PROMPT_FORMATS[promptMode];
+  $('promptFormat').textContent = PROMPT_FORMATS[promptMode];
+  renderPromptVars();
+  renderPromptStatus();
+}
+
+function insertVariable(name) {
+  const input = $('promptInput');
+  input.focus();
+  input.setRangeText(`{{${name}}}`, input.selectionStart, input.selectionEnd, 'end');
+  input.dispatchEvent(new Event('input'));
+}
+
+function wirePromptEditor() {
+  for (const radio of document.querySelectorAll('input[name="promptMode"]')) {
+    radio.addEventListener('change', () => {
+      savePrompt.flush();
+      promptMode = PROMPT_MODES.includes(radio.value) ? radio.value : 'translate';
+      renderPromptEditor();
+    });
+  }
+  $('promptInput').addEventListener('input', () => {
+    renderPromptStatus();
+    savePrompt();
+  });
+  $('promptReset').addEventListener('click', () => {
+    savePrompt.cancel();
+    $('promptInput').value = DEFAULT_PROMPTS[promptMode];
+    save({ prompts: { [promptMode]: '' } }, { quiet: true });
+    toast(t('toast.promptReset'));
+    renderPromptStatus();
+  });
+  renderPromptEditor();
+}
+
 // ------------------------------------------------------------------ try it
 
 let cancelTry = null;
@@ -414,6 +494,8 @@ function applyLocale(preference) {
   renderConnectionFromSettings();
   renderBallHint();
   renderShortcuts();
+  renderPromptVars();
+  renderPromptStatus();
   fillLanguageSelect($('targetLang'), $('targetLang').value);
   fillLanguageSelect($('secondLang'), $('secondLang').value);
 }
@@ -503,6 +585,7 @@ async function init() {
     radio.addEventListener('change', () => save({ pageStyle: radio.value }));
   }
 
+  wirePromptEditor();
   $('tryButton').addEventListener('click', runTry);
   $('tryInput').addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -524,6 +607,8 @@ async function init() {
     }
     // After a possible language switch below, so titles use the new language.
     queueMicrotask(renderQuick);
+    // Tab markers reflect what is stored, which lands after a debounced save.
+    renderPromptStatus();
     if (next.enabled !== $('enabled').checked) $('enabled').checked = next.enabled;
     if (next.targetLang !== $('targetLang').value) $('targetLang').value = next.targetLang;
     if (next.floatBall !== undefined && next.floatBall !== $('floatBall').checked) $('floatBall').checked = next.floatBall;

@@ -497,6 +497,66 @@ test('the theme and language toggles update every page at once', async () => {
   await Promise.all([article.close(), options.close(), popup.close()]);
 });
 
+test('custom prompts are edited in settings and used for requests', async () => {
+  const page = await openOptions();
+  const badge = page.locator('#promptBadge');
+  assert.match(await page.inputValue('#promptInput'), /^You are a professional translation engine\. Translate the user's text into \{\{to\}\}\./);
+  assert.equal(await badge.textContent(), '默认');
+  assert.equal(await page.locator('#promptReset').isDisabled(), true);
+  assert.equal(await page.locator('#promptFormatWrap').isHidden(), true);
+
+  // Edit the selection prompt, inserting a variable at the cursor.
+  await page.fill('#promptInput', 'Translate into {{to}} like a pirate. Fallback: ');
+  await page.locator('#promptInput').press('End');
+  await page.locator('.var-chip[data-var="alt"]').click();
+  assert.equal(await page.inputValue('#promptInput'), 'Translate into {{to}} like a pirate. Fallback: {{alt}}');
+  assert.equal(await badge.textContent(), '已自定义');
+  assert.equal(await page.locator('.prompt-tabs label.customized').count(), 1);
+
+  // "Try it" sends the rendered custom prompt.
+  await page.fill('#tryInput', 'Ahoy there, friend.');
+  await page.click('#tryButton');
+  await page.locator('#tryOutput', { hasText: '【译】Ahoy there, friend.' }).waitFor({ timeout: 8000 });
+  const selection = mock.requests.findLast((r) => r.path === '/openai/v1/chat/completions');
+  assert.equal(selection.body.messages[0].content, 'Translate into Simplified Chinese like a pirate. Fallback: English');
+  const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
+  assert.equal(stored.settings.prompts.translate, 'Translate into {{to}} like a pirate. Fallback: {{alt}}');
+
+  // The page prompt keeps its fixed output format.
+  await page.locator('input[name="promptMode"][value="page"]').check({ force: true });
+  assert.match(await page.inputValue('#promptInput'), /\{\{title\}\}/);
+  await page.locator('#promptFormatWrap summary').click();
+  assert.match(await page.textContent('#promptFormat'), /<seg id="N">/);
+  assert.deepEqual(await page.locator('.var-chip').evaluateAll((chips) => chips.map((c) => c.dataset.var)), ['to', 'title']);
+  await page.fill('#promptInput', 'Pages titled {{title}} go into {{to}}, gently.');
+  await page.locator('[aria-labelledby="sec-prompt"]').screenshot({ path: join(ARTIFACTS, 'options-prompts.png'), animations: 'disabled' });
+  await page.locator('input[name="promptMode"][value="translate"]').check({ force: true });
+  await page.waitForFunction(() => document.querySelectorAll('.prompt-tabs label.customized').length === 2);
+
+  const article = await context.newPage();
+  await article.goto(`${mock.url}/article.html`);
+  await article.bringToFront();
+  await serviceWorker.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url: `${url}/article.html` });
+    return chrome.tabs.sendMessage(tab.id, { type: 'glint:page', action: 'toggle' }, { frameId: 0 });
+  }, mock.url);
+  await translationOf(article, 'p1').waitFor({ timeout: 8000 });
+  const batch = mock.requests.findLast((r) => r.path === '/openai/v1/chat/completions');
+  assert.match(batch.body.messages[0].content, /^Pages titled Reading in two languages go into Simplified Chinese, gently\.\nThe user message contains segments wrapped as <seg id="N">/);
+  await article.close();
+
+  // Reset puts the default back and stores nothing.
+  await page.bringToFront();
+  await page.click('#promptReset');
+  assert.equal(await badge.textContent(), '默认');
+  await page.locator('input[name="promptMode"][value="page"]').check({ force: true });
+  await page.click('#promptReset');
+  await page.waitForFunction(() => !document.querySelector('.prompt-tabs label.customized'));
+  const reset = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
+  assert.deepEqual(reset.settings.prompts, { translate: '', dictionary: '', page: '' });
+  await page.close();
+});
+
 test('popup translates typed text and shows the provider status', async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 368, height: 600 });
