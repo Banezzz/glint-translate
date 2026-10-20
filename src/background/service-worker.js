@@ -6,16 +6,34 @@ import { buildChatRequest, streamChat, TranslationError } from '../shared/transl
 const PORT_NAME = 'glint:translate';
 const MENU_ID = 'glint-translate-selection';
 const CONTENT_SCRIPTS = chrome.runtime.getManifest().content_scripts[0].js;
-const CACHE_LIMIT = 100;
 
 // Recent results, so reopening the same selection is instant. Lost whenever
 // the worker is suspended, which is fine.
 const cache = new Map();
 
-function remember(key, value) {
-  cache.delete(key);
-  cache.set(key, value);
-  if (cache.size > CACHE_LIMIT) cache.delete(cache.keys().next().value);
+function remember(store, limit, key, value) {
+  store.delete(key);
+  store.set(key, value);
+  if (store.size > limit) store.delete(store.keys().next().value);
+}
+
+const NOT_CONFIGURED = { type: 'error', code: 'not_configured', message: '还没有配置模型服务', detail: '在设置页填写 API 地址、Key 并选择模型后即可使用' };
+
+function errorPayload(err) {
+  const known = err instanceof TranslationError;
+  return {
+    type: 'error',
+    code: known ? err.code : 'unknown',
+    message: known ? err.message : '翻译失败',
+    detail: known ? err.detail : String(err?.message || err),
+  };
+}
+
+// Extension API calls reset the worker's idle timer; slow first tokens
+// must not get the worker suspended mid-request.
+function keepAlive() {
+  const timer = setInterval(() => chrome.runtime.getPlatformInfo(), 20_000);
+  return () => clearInterval(timer);
 }
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
@@ -106,7 +124,7 @@ async function runTranslation(port, message, signal) {
 
   const settings = await loadSettings();
   if (!isProviderReady(settings)) {
-    post({ type: 'error', code: 'not_configured', message: '还没有配置模型服务', detail: '在设置页填写 API 地址、Key 并选择模型后即可使用' });
+    post(NOT_CONFIGURED);
     return;
   }
   const text = clampInput(message.text);
@@ -129,15 +147,13 @@ async function runTranslation(port, message, signal) {
   const key = JSON.stringify([provider.baseUrl, provider.model, mode, target, text]);
   if (!message.fresh && cache.has(key)) {
     const cached = cache.get(key);
-    remember(key, cached);
+    remember(cache, 100, key, cached);
     post({ type: 'delta', text: cached });
     post({ type: 'done', text: cached, cached: true });
     return;
   }
 
-  // Extension API calls reset the worker's idle timer; slow first tokens
-  // must not get the worker suspended mid-request.
-  const keepAlive = setInterval(() => chrome.runtime.getPlatformInfo(), 20_000);
+  const release = keepAlive();
   try {
     const request = buildChatRequest({ ...provider, system: buildSystemPrompt({ mode, target, fallback }), text });
     let full = '';
@@ -146,18 +162,12 @@ async function runTranslation(port, message, signal) {
       post({ type: 'delta', text: delta });
     }
     if (!full.trim()) throw new TranslationError('empty_response', '模型没有返回内容', '');
-    remember(key, full);
+    remember(cache, 100, key, full);
     post({ type: 'done', text: full, cached: false });
   } catch (err) {
-    if (signal.aborted) return;
-    const known = err instanceof TranslationError;
-    post({
-      type: 'error',
-      code: known ? err.code : 'unknown',
-      message: known ? err.message : '翻译失败',
-      detail: known ? err.detail : String(err?.message || err),
-    });
+    if (!signal.aborted) post(errorPayload(err));
   } finally {
-    clearInterval(keepAlive);
+    release();
   }
 }
+
