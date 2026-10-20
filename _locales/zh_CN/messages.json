@@ -1,0 +1,17 @@
+{
+  "name": {
+    "message": "Glint 划词翻译"
+  },
+  "description": {
+    "message": "划词翻译与网页双语对照翻译，接入你自己的 OpenAI / Claude 兼容大模型，自动识别接口协议与可用模型。"
+  },
+  "actionTitle": {
+    "message": "Glint 划词翻译"
+  },
+  "commandSelection": {
+    "message": "翻译选中的文本"
+  },
+  "commandPage": {
+    "message": "翻译整个网页（双语对照）/ 显示原文"
+  }
+}
