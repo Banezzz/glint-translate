@@ -40,5 +40,6 @@ globalThis.GLINT_ICONS = Object.freeze({
   },
   chevronDown: { paths: ['m6 9 6 6 6-6'] },
   arrowRight: { paths: ['M5 12h14', 'm13 6 6 6-6 6'] },
+  languages: { paths: ['m5 8 6 6', 'm4 14 6-6 2-3', 'M2 5h12', 'M7 2h1', 'm22 22-5-10-5 10', 'M14 18h6'] },
   alert: { paths: ['M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0z', 'M12 8v4', 'M12 16h.01'] },
 });

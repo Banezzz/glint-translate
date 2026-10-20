@@ -1,5 +1,6 @@
-// Whole-page bilingual translation. Runs as a classic content script after
-// page-styles.js and dom.js; only the top frame translates its page.
+// Whole-page bilingual translation and the floating ball. Runs as a classic
+// content script after page-styles.js, icons.js and dom.js; only the top
+// frame translates its page.
 //
 // The page is split into paragraph units: runs of inline content inside a
 // block element. Units are translated lazily as they scroll into view, in
@@ -11,9 +12,10 @@
   // Replace a stale copy of this script (e.g. after the extension updated).
   document.dispatchEvent(new CustomEvent('glint:page-teardown'));
 
-  const { h, alive } = GLINT_DOM;
+  const { h, icon, alive } = GLINT_DOM;
   const PORT_NAME = 'glint:page';
-  const DEFAULTS = { targetLang: 'zh-CN', pageStyle: 'dashed' };
+  const POSITION_KEY = 'ballPosition';
+  const DEFAULTS = { targetLang: 'zh-CN', theme: 'auto', floatBall: true, ballDisabledSites: [], pageStyle: 'dashed' };
   const SETTINGS_ERRORS = new Set(['not_configured', 'auth', 'network', 'http_400', 'http_401', 'http_403', 'http_404']);
   const BATCH_SEGMENTS = 10;
   const BATCH_CHARS = 2000;
@@ -22,7 +24,7 @@
   // Units whose text keeps changing (clocks, counters) stop being re-translated.
   const MAX_CHURN = 4;
 
-  const OWN_TAGS = new Set(['GLINT-TR', 'GLINT-TRANSLATE']);
+  const OWN_TAGS = new Set(['GLINT-TR', 'GLINT-TRANSLATE', 'GLINT-BALL']);
   const SKIP_TAGS = new Set([
     'SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'TITLE', 'META', 'LINK',
     'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'BUTTON', 'PRE', 'CODE', 'KBD', 'SAMP', 'VAR',
@@ -31,10 +33,11 @@
   const SKIP_SELECTOR = [
     ...[...SKIP_TAGS].map((tag) => tag.toLowerCase()),
     '[translate="no"]', '.notranslate', '[contenteditable]:not([contenteditable="false"])',
-    'glint-tr', 'glint-translate',
+    'glint-tr', 'glint-translate', 'glint-ball',
   ].join(',');
   const INLINE_DISPLAYS = new Set(['inline', 'inline-block', 'inline-flex', 'inline-grid', 'contents', 'ruby', 'ruby-text']);
   const HEADINGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
+  const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 
   let settings = { ...DEFAULTS };
   let active = false;
@@ -110,7 +113,7 @@
 
   function owned(node) {
     const el = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
-    return Boolean(el?.closest('glint-tr, glint-translate'));
+    return Boolean(el?.closest('glint-tr, glint-translate, glint-ball'));
   }
 
   // ------------------------------------------------------------- scanning
@@ -315,6 +318,7 @@
         for (const unit of units || []) enqueue(unit);
       }
     }
+    renderBall();
   }
 
   // ------------------------------------------------------------ rendering
@@ -402,6 +406,7 @@
     unit.wrapper.title = '';
     queue.push(unit);
     schedulePump();
+    renderBall();
   }
 
   function applyPageStyle() {
@@ -424,6 +429,7 @@
       const batches = [...inFlight.values()];
       inFlight.clear();
       for (const batch of batches) settle(batch, batch.texts, { code: 'disconnected', message: '与扩展的连接已断开', detail: '请重试；若扩展刚更新过，请刷新页面' });
+      renderBall();
     });
     return port;
   }
@@ -469,6 +475,7 @@
       if (!texts.length) break;
       send({ id: ++batchSeq, texts, done: new Set() });
     }
+    renderBall();
   }
 
   function send(batch) {
@@ -523,6 +530,7 @@
       }
     }
     schedulePump();
+    renderBall();
   }
 
   // ---------------------------------------------------------- start / stop
@@ -536,6 +544,7 @@
     ensureSheet();
     scanAll();
     mutations.observe(document.body, { childList: true, subtree: true, characterData: true });
+    renderBall();
   }
 
   function stop() {
@@ -559,6 +568,7 @@
     rootsByTarget.clear();
     dirty.clear();
     for (const wrapper of document.querySelectorAll('glint-tr')) wrapper.remove();
+    renderBall();
   }
 
   function toggle() {
@@ -570,12 +580,115 @@
     return { active, busy: active && (inFlight.size > 0 || queue.length > 0) };
   }
 
+  // ------------------------------------------------------------------ ball
+
+  const ball = { host: null, root: null, dock: null, button: null, tip: null, top: null };
+
+  function ballVisible() {
+    return Boolean(settings.floatBall && !settings.ballDisabledSites.includes(location.hostname) && document.body);
+  }
+
+  function applyTheme() {
+    if (!ball.root) return;
+    const dark = settings.theme === 'dark' || (settings.theme === 'auto' && darkQuery.matches);
+    ball.root.dataset.theme = dark ? 'dark' : 'light';
+  }
+
+  function ensureBall() {
+    if (ball.host?.isConnected) return;
+    ball.host = document.createElement('glint-ball');
+    ball.host.style.cssText =
+      'all: initial !important; position: fixed !important; top: 0 !important; right: 0 !important; ' +
+      'width: 0 !important; height: 0 !important; z-index: 2147483646 !important; display: block !important;';
+    const shadow = ball.host.attachShadow({ mode: 'open' });
+    const ballSheet = new CSSStyleSheet();
+    ballSheet.replaceSync(GLINT_BALL_CSS);
+    shadow.adoptedStyleSheets = [ballSheet];
+
+    ball.button = h(
+      'button',
+      {
+        class: 'ball',
+        type: 'button',
+        onpointerdown: startBallDrag,
+        // Keyboard activation; pointer clicks are handled by the drag logic.
+        onclick: (event) => event.detail === 0 && toggle(),
+      },
+      icon('languages'),
+    );
+    ball.tip = h('span', { class: 'tip' });
+    ball.dock = h('div', { class: 'dock' }, ball.tip, ball.button);
+    ball.root = h('div', { class: 'ball-root' }, ball.dock);
+    shadow.append(ball.root);
+    document.documentElement.append(ball.host);
+    applyTheme();
+    placeBall();
+  }
+
+  function renderBall() {
+    if (!ballVisible()) {
+      ball.host?.remove();
+      ball.host = null;
+      return;
+    }
+    ensureBall();
+    const { busy } = status();
+    const state = busy ? 'loading' : active ? 'active' : 'idle';
+    ball.dock.dataset.state = state;
+    const label = state === 'loading' ? '正在翻译… 点击显示原文' : active ? '显示原文' : '翻译此网页（双语对照）';
+    ball.tip.textContent = label;
+    ball.button.setAttribute('aria-label', label);
+    const ring = ball.button.querySelector('.ring');
+    if (busy && !ring) ball.button.append(h('span', { class: 'ring' }));
+    else if (!busy) ring?.remove();
+  }
+
+  function placeBall() {
+    if (!ball.dock) return;
+    const vh = innerHeight;
+    const top = Math.min(Math.max(ball.top ?? vh * 0.62, 48), vh - 48);
+    ball.dock.style.top = `${top}px`;
+  }
+
+  function startBallDrag(event) {
+    if (event.button !== 0) return;
+    const startY = event.clientY;
+    const startTop = parseFloat(ball.dock.style.top) || innerHeight * 0.62;
+    let dragging = false;
+    ball.button.setPointerCapture(event.pointerId);
+    const move = (e) => {
+      if (!dragging && Math.abs(e.clientY - startY) < 4) return;
+      dragging = true;
+      ball.dock.classList.add('dragging');
+      ball.top = startTop + e.clientY - startY;
+      placeBall();
+    };
+    const end = (e) => {
+      ball.button.removeEventListener('pointermove', move);
+      ball.button.removeEventListener('pointerup', end);
+      ball.button.removeEventListener('pointercancel', end);
+      ball.dock.classList.remove('dragging');
+      if (dragging) {
+        ball.top = parseFloat(ball.dock.style.top);
+        chrome.storage.local.set({ [POSITION_KEY]: ball.top / innerHeight }).catch(() => {});
+      } else if (e.type === 'pointerup') {
+        if (!alive()) return teardown();
+        toggle();
+      }
+    };
+    ball.button.addEventListener('pointermove', move);
+    ball.button.addEventListener('pointerup', end);
+    ball.button.addEventListener('pointercancel', end);
+  }
+
   // ------------------------------------------------------------- settings
 
   async function loadSettings() {
     try {
-      const { settings: stored } = await chrome.storage.local.get('settings');
+      const { settings: stored, [POSITION_KEY]: position } = await chrome.storage.local.get(['settings', POSITION_KEY]);
       settings = { ...DEFAULTS, ...(stored || {}) };
+      if (typeof position === 'number') ball.top = position * innerHeight;
+      renderBall();
     } catch {
       // Extension context gone.
     }
@@ -593,6 +706,8 @@
       }
     }
     if (previous.pageStyle !== settings.pageStyle) applyPageStyle();
+    applyTheme();
+    renderBall();
   }
 
   function onRuntimeMessage(message, _sender, sendResponse) {
@@ -612,10 +727,14 @@
       // Already gone.
     }
     port = null;
+    ball.host?.remove();
+    ball.host = null;
     if (sheet) document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
   }
 
   listen(document, 'glint:page-teardown', teardown);
+  listen(window, 'resize', placeBall);
+  listen(darkQuery, 'change', applyTheme);
   chrome.runtime.onMessage.addListener(onRuntimeMessage);
   chrome.storage.onChanged.addListener(onStorageChanged);
   cleanups.push(() => {

@@ -25,6 +25,7 @@ export default [
         GLINT_PARSE_DICTIONARY: 'readonly',
         GLINT_CARD_CSS: 'readonly',
         GLINT_PAGE_CSS: 'readonly',
+        GLINT_BALL_CSS: 'readonly',
         GLINT_ICONS: 'readonly',
         GLINT_DOM: 'readonly',
       },

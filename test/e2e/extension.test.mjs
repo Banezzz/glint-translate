@@ -227,23 +227,25 @@ test('context menu style requests open the card via the background worker', asyn
   await page.close();
 });
 
-// Toggles page translation the way the context menu and the shortcut do.
-async function togglePage(page) {
-  await page.bringToFront();
-  return serviceWorker.evaluate(async (url) => {
-    const [tab] = await chrome.tabs.query({ url: `${url}/article.html` });
-    return chrome.tabs.sendMessage(tab.id, { type: 'glint:page', action: 'toggle' }, { frameId: 0 });
-  }, mock.url);
+// Clicks the floating ball like a user (it sits half off the right edge
+// until hovered).
+async function clickBall(page) {
+  const ball = page.locator('glint-ball .ball');
+  await ball.waitFor({ state: 'visible', timeout: 5000 });
+  await ball.hover();
+  await page.waitForTimeout(250);
+  const box = await ball.boundingBox();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
 const translationOf = (page, id) => page.locator(`#${id} > glint-tr[data-glint-state="done"]`);
 
-test('whole-page translation is bilingual, lazy and reversible', async () => {
-  await setSettings({ pageStyle: 'dashed' });
+test('the floating ball translates the page bilingually, lazily and reversibly', async () => {
+  await setSettings({ theme: 'light', pageStyle: 'dashed', floatBall: true, ballDisabledSites: [] });
   const page = await context.newPage();
   await page.goto(`${mock.url}/article.html`);
   const before = mock.requests.length;
-  assert.equal((await togglePage(page)).active, true);
+  await clickBall(page);
 
   // Visible paragraphs get their translation inserted right below them.
   await translationOf(page, 'p1').waitFor({ timeout: 8000 });
@@ -262,6 +264,8 @@ test('whole-page translation is bilingual, lazy and reversible', async () => {
   assert.equal(await page.locator('#code glint-tr, #zh-para glint-tr, #numbers glint-tr, #ident glint-tr, #hidden-p glint-tr').count(), 0);
   // Below-the-fold content waits until it is scrolled to.
   assert.equal(await page.locator('#far glint-tr').count(), 0);
+  await page.locator('glint-ball .dock[data-state="active"]').waitFor({ timeout: 8000 });
+  await page.mouse.move(400, 300);
   await shot(page, 'page-bilingual', { clip: { x: 0, y: 0, width: 1180, height: 820 } });
 
   // Paragraphs travel in batches, not one request each.
@@ -290,18 +294,38 @@ test('whole-page translation is bilingual, lazy and reversible', async () => {
   await setSettings({ pageStyle: 'highlight' });
   await page.locator('#p1 > glint-tr[data-glint-style="highlight"]').waitFor({ timeout: 3000 });
 
-  // Toggling again restores the original page.
-  assert.equal((await togglePage(page)).active, false);
+  // Clicking again restores the original page.
+  await clickBall(page);
+  await page.locator('glint-ball .dock[data-state="idle"]').waitFor({ timeout: 3000 });
   assert.equal(await page.locator('glint-tr').count(), 0);
 
   // Translating again is served from cache without new requests.
   await page.evaluate(() => scrollTo(0, 0));
   const beforeAgain = mock.requests.length;
-  await togglePage(page);
+  await clickBall(page);
   await translationOf(page, 'p1').waitFor({ timeout: 8000 });
   assert.equal(mock.requests.slice(beforeAgain).filter((r) => r.path === '/openai/v1/chat/completions').length, 0);
   await page.close();
-  await setSettings({ pageStyle: 'dashed' });
+  await setSettings({ pageStyle: 'dashed', theme: 'auto' });
+});
+
+test('page translation also runs from the menu/shortcut message', async () => {
+  const page = await context.newPage();
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.goto(`${mock.url}/article.html`);
+  await page.bringToFront();
+  const response = await serviceWorker.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url: `${url}/article.html` });
+    return chrome.tabs.sendMessage(tab.id, { type: 'glint:page', action: 'toggle' }, { frameId: 0 });
+  }, mock.url);
+  assert.equal(response.active, true);
+  await translationOf(page, 'p1').waitFor({ timeout: 8000 });
+  await page.locator('glint-ball .dock[data-state="active"]').waitFor({ timeout: 8000 });
+  await page.locator('glint-ball .ball').hover();
+  await page.waitForTimeout(250);
+  await shot(page, 'ball-dark', { clip: { x: 780, y: 360, width: 400, height: 280 } });
+
+  await page.close();
 });
 
 test('popup translates typed text and shows the provider status', async () => {
