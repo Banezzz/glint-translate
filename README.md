@@ -131,6 +131,7 @@
 - API 地址、Key 和偏好设置只保存在本机的 `chrome.storage.local` 中，不会同步到云端。
 - 选中的文本、以及开启网页翻译后页面上的段落文字和标题，只会发送到你配置的 API 地址，插件没有任何统计或第三方请求。网页翻译只在你点击悬浮球、按快捷键或使用菜单后才会开始。
 - 插件需要访问所有网站，原因有两个：在任意页面上划词和翻译网页，以及请求你自定义的 API 地址。
+- 完整的隐私政策见 <https://banezzz.github.io/glint-translate/privacy.html>。
 
 ## 开发
 
@@ -144,6 +145,7 @@ npm run e2e               # 在真实 Chromium 中加载插件，对接本地 mo
 npm run pack              # 打包到 dist/glint-translate-v<version>.zip
 npm run mock              # 启动 mock OpenAI / Anthropic 接口（端口 8787），用于手动调试
 npm run icons             # 重新生成图标
+npm run store:assets      # 重新生成 Chrome 应用商店的截图和宣传图（见 store/README.md）
 ```
 
 如果环境变量里设置了 `NODE_ENV=production`，`npm ci` 会跳过开发依赖，请改用 `NODE_ENV=development npm ci`。
@@ -174,6 +176,9 @@ src/
     i18n.js                      扩展页面的界面语言：t()、data-i18n 标记的静态文案
     quick-toggles.js             弹出面板与设置页顶部的主题、语言切换按钮
 _locales/                        Chrome 显示的插件名称、描述和快捷键说明（随浏览器语言）
+docs/                            README 截图；index.html 与 privacy.html 由 GitHub Pages 发布
+store/                           Chrome 应用商店上架指南（README.md）与素材（assets/）
+scripts/store/                   生成商店素材的脚本与演示内容
 test/unit/                       单元测试
 test/e2e/                        Playwright 端到端测试与 mock 接口
 ```
