@@ -168,6 +168,8 @@
       'ball.showOriginal': '显示原文',
       'ball.translate': '翻译此网页',
       'bubble.gotIt': '知道了',
+      'menu.selection': '用 Glint 翻译“%s”',
+      'menu.page': '翻译此网页（双语对照）/ 显示原文',
     },
     en: {
       'lang.auto': 'Auto-detect',
@@ -332,6 +334,8 @@
       'ball.showOriginal': 'Show original',
       'ball.translate': 'Translate this page',
       'bubble.gotIt': 'Got it',
+      'menu.selection': 'Translate “%s” with Glint',
+      'menu.page': 'Translate this page (bilingual) / Show original',
     },
   };
 

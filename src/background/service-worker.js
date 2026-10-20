@@ -48,8 +48,9 @@ function keepAlive() {
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   await chrome.contextMenus.removeAll();
-  chrome.contextMenus.create({ id: MENU_ID, title: '用 Glint 翻译“%s”', contexts: ['selection'] });
-  chrome.contextMenus.create({ id: PAGE_MENU_ID, title: '翻译此网页（双语对照）/ 显示原文', contexts: ['page'] });
+  const locale = localeOf(await loadSettings());
+  chrome.contextMenus.create({ id: MENU_ID, title: translate(locale, 'menu.selection'), contexts: ['selection'] });
+  chrome.contextMenus.create({ id: PAGE_MENU_ID, title: translate(locale, 'menu.page'), contexts: ['page'] });
   if (reason === 'install' || reason === 'update') await injectIntoOpenTabs();
   if (reason === 'install' && !isProviderReady(await loadSettings())) chrome.runtime.openOptionsPage();
 });
@@ -81,6 +82,15 @@ async function sendToTab(tabId, message, frameId) {
     }
   }
 }
+
+// Menu titles follow the interface language.
+chrome.storage.onChanged.addListener((changes, area) => {
+  const { oldValue, newValue } = changes.settings || {};
+  if (area !== 'local' || !newValue || oldValue?.uiLang === newValue.uiLang) return;
+  const locale = localeOf(newValue);
+  chrome.contextMenus.update(MENU_ID, { title: translate(locale, 'menu.selection') }).catch(() => {});
+  chrome.contextMenus.update(PAGE_MENU_ID, { title: translate(locale, 'menu.page') }).catch(() => {});
+});
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (tab?.id === undefined) return;
