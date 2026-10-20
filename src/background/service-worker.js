@@ -174,7 +174,8 @@ async function runTranslation(port, message, signal) {
   const mode = settings.dictionary && isDictionaryCandidate(text) ? 'dictionary' : 'translate';
   post({ type: 'meta', sourceLang, targetLang: target, mode, model: provider.model, protocol: provider.type });
 
-  const key = JSON.stringify([provider.baseUrl, provider.model, mode, target, text]);
+  const template = settings.prompts[mode] || '';
+  const key = JSON.stringify([provider.baseUrl, provider.model, mode, template, target, text]);
   if (!message.fresh && cache.has(key)) {
     const cached = cache.get(key);
     remember(cache, 100, key, cached);
@@ -185,7 +186,8 @@ async function runTranslation(port, message, signal) {
 
   const release = keepAlive();
   try {
-    const request = buildChatRequest({ ...provider, system: buildSystemPrompt({ mode, target, fallback }), text });
+    const system = buildSystemPrompt({ mode, target, fallback, source: sourceLang, template });
+    const request = buildChatRequest({ ...provider, system, text });
     let full = '';
     for await (const delta of streamChat({ request, signal })) {
       full += delta;
@@ -247,7 +249,8 @@ async function runBatch(port, message, signal) {
     .map((text) => String(text).trim().slice(0, MAX_BATCH_CHARS));
   const provider = effectiveProvider(settings.provider);
   const target = message.targetLang || settings.targetLang;
-  const keyOf = (text) => JSON.stringify([provider.baseUrl, provider.model, 'page', target, text]);
+  const template = settings.prompts.page || '';
+  const keyOf = (text) => JSON.stringify([provider.baseUrl, provider.model, 'page', template, target, text]);
 
   // Serve what is cached; only the rest goes to the model.
   const pending = [];
@@ -265,7 +268,7 @@ async function runBatch(port, message, signal) {
   try {
     const request = buildChatRequest({
       ...provider,
-      system: buildPagePrompt({ target, title: message.title }),
+      system: buildPagePrompt({ target, title: message.title, template }),
       text: buildSegmentsInput(pending.map((i) => segments[i])),
       maxTokens: 4096,
     });
