@@ -28,6 +28,7 @@ export default [
         GLINT_BALL_CSS: 'readonly',
         GLINT_ICONS: 'readonly',
         GLINT_DOM: 'readonly',
+        GLINT_I18N: 'readonly',
       },
     },
   },

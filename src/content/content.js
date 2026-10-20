@@ -1,5 +1,6 @@
 // Selection trigger and translation card. Runs as a classic content script
-// after languages.js, card-styles.js, icons.js and dom.js (shared isolated world).
+// after languages.js, i18n.js, card-styles.js, icons.js and dom.js (shared
+// isolated world).
 (() => {
   if (!(document.documentElement instanceof HTMLElement)) return;
 
@@ -8,9 +9,9 @@
 
   const PORT_NAME = 'glint:translate';
   const MAX_TEXT = 6000;
-  const DEFAULTS = { enabled: true, targetLang: 'zh-CN', trigger: 'icon', theme: 'auto', fontSize: 15, disabledSites: [] };
+  const DEFAULTS = { enabled: true, targetLang: 'zh-CN', trigger: 'icon', theme: 'auto', uiLang: 'auto', fontSize: 15, disabledSites: [] };
   const SETTINGS_ERRORS = new Set(['not_configured', 'auth', 'network', 'http_400', 'http_401', 'http_403', 'http_404']);
-  const { h, icon, alive } = GLINT_DOM;
+  const { h, icon, alive, localeOf, localize } = GLINT_DOM;
   const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 
   let settings = { ...DEFAULTS };
@@ -42,8 +43,13 @@
     cleanups.push(() => target.removeEventListener(type, handler, options));
   }
 
-  function iconButton(name, title, onclick) {
-    return h('button', { class: 'icon-btn', type: 'button', title, 'aria-label': title, onclick }, icon(name));
+  function t(key, params) {
+    return GLINT_I18N.translate(localeOf(settings), key, params);
+  }
+
+  // Buttons keep their label key so a language switch can re-label them.
+  function iconButton(name, key, onclick) {
+    return h('button', { class: 'icon-btn', type: 'button', 'data-i18n-title': key, title: t(key), 'aria-label': t(key), onclick }, icon(name));
   }
 
   function setIcon(button, name) {
@@ -62,9 +68,11 @@
   }
 
   function langLabel(code) {
-    if (!code || code === 'und') return '自动检测';
-    if (code.toLowerCase() === 'zh') return '中文';
-    return langInfo(code)?.label ?? code;
+    if (!code || code === 'und') return t('lang.auto');
+    if (code.toLowerCase() === 'zh') return t('lang.zh');
+    const info = langInfo(code);
+    if (!info) return code;
+    return localeOf(settings) === 'en' ? info.english : info.label;
   }
 
   function clamp(value, min, max) {
@@ -101,8 +109,15 @@
 
   function onStorageChanged(changes, area) {
     if (area !== 'local' || !changes.settings) return;
+    const previous = localeOf(settings);
     settings = { ...DEFAULTS, ...(changes.settings.newValue || {}) };
     applyTheme();
+    if (localeOf(settings) !== previous) {
+      localize(root, t);
+      card?.setAttribute('aria-label', t('card.label'));
+      if (ui.menu) ui.menu.hidden = true;
+      render();
+    }
     if (!settings.enabled || siteDisabled()) hideTrigger();
   }
 
@@ -181,8 +196,9 @@
       trigger = h('button', {
         class: 'trigger',
         type: 'button',
-        title: '翻译选中文本',
-        'aria-label': '翻译选中文本',
+        'data-i18n-title': 'card.trigger',
+        title: t('card.trigger'),
+        'aria-label': t('card.trigger'),
         // Keep the page selection intact while clicking.
         onmousedown: (e) => e.preventDefault(),
         onclick: () => {
@@ -214,29 +230,29 @@
   function buildCard() {
     ui.source = h('span', { class: 'lang-source' });
     ui.targetLabel = h('span');
-    ui.target = h('button', { class: 'lang-target', type: 'button', title: '切换目标语言', onclick: toggleLangMenu }, ui.targetLabel, icon('chevronDown'));
+    ui.target = h('button', { class: 'lang-target', type: 'button', 'data-i18n-title': 'card.switchTarget', title: t('card.switchTarget'), onclick: toggleLangMenu }, ui.targetLabel, icon('chevronDown'));
     ui.menu = h('div', { class: 'lang-menu', role: 'listbox', hidden: true });
-    ui.pin = iconButton('pin', '固定窗口', togglePin);
+    ui.pin = iconButton('pin', 'card.pin', togglePin);
     ui.head = h(
       'header',
       { class: 'card-head' },
       h('div', { class: 'langs' }, ui.source, h('span', { class: 'lang-arrow' }, icon('arrowRight')), ui.target, ui.menu),
-      h('div', { class: 'head-actions' }, ui.pin, iconButton('close', '关闭 (Esc)', closeCard)),
+      h('div', { class: 'head-actions' }, ui.pin, iconButton('close', 'card.close', closeCard)),
     );
     ui.sourceBox = h('div');
     ui.result = h('div', { class: 'result', 'aria-live': 'polite' });
     ui.body = h('div', { class: 'card-body' }, ui.sourceBox, ui.result);
     ui.model = h('span', { class: 'model' });
-    ui.speak = iconButton('volume', '朗读原文', () => speak(current?.text, current?.meta?.sourceLang, ui.speak));
-    ui.copy = iconButton('copy', '复制译文', copyResult);
-    ui.retry = iconButton('refresh', '重新翻译', () => current && translate(current.text, current.targetOverride, true));
+    ui.speak = iconButton('volume', 'card.speakSource', () => speak(current?.text, current?.meta?.sourceLang, ui.speak));
+    ui.copy = iconButton('copy', 'popup.copy', copyResult);
+    ui.retry = iconButton('refresh', 'card.retranslate', () => current && translate(current.text, current.targetOverride, true));
     const foot = h(
       'footer',
       { class: 'card-foot' },
       ui.model,
-      h('div', { class: 'foot-actions' }, ui.speak, ui.copy, ui.retry, iconButton('settings', '设置', openSettings)),
+      h('div', { class: 'foot-actions' }, ui.speak, ui.copy, ui.retry, iconButton('settings', 'popup.settings', openSettings)),
     );
-    card = h('section', { class: 'card', role: 'dialog', 'aria-label': 'Glint 翻译', hidden: true }, ui.head, ui.body, foot);
+    card = h('section', { class: 'card', role: 'dialog', 'aria-label': t('card.label'), hidden: true }, ui.head, ui.body, foot);
     root.append(card);
     ui.head.addEventListener('pointerdown', startDrag);
     new ResizeObserver(() => placeCard()).observe(card);
@@ -324,7 +340,9 @@
   function togglePin() {
     pinned = !pinned;
     ui.pin.classList.toggle('active', pinned);
-    ui.pin.title = pinned ? '取消固定' : '固定窗口';
+    ui.pin.dataset.i18nTitle = pinned ? 'card.unpin' : 'card.pin';
+    ui.pin.title = t(ui.pin.dataset.i18nTitle);
+    ui.pin.setAttribute('aria-label', ui.pin.title);
   }
 
   function toggleLangMenu() {
@@ -348,7 +366,7 @@
               if (current) translate(current.text, lang.code, false);
             },
           },
-          lang.label,
+          langLabel(lang.code),
           isSelected ? icon('check') : null,
         );
       }),
@@ -361,7 +379,7 @@
   function render() {
     if (!current || !card) return;
     const { meta, status, mode } = current;
-    ui.source.textContent = meta ? langLabel(meta.sourceLang) : status === 'error' ? '原文' : '识别中…';
+    ui.source.textContent = meta ? langLabel(meta.sourceLang) : status === 'error' ? t('card.source') : t('card.detecting');
     ui.targetLabel.textContent = langLabel(meta?.targetLang || current.targetOverride || settings.targetLang);
     ui.model.replaceChildren(...(meta?.model ? [h('span', { class: 'model-name', title: meta.model }, meta.model)] : []));
     ui.copy.disabled = status !== 'done';
@@ -378,13 +396,13 @@
       ui.sourceBox.replaceChildren(
         h('span', { class: 'dict-word' }, text),
         phonetic ? h('span', { class: 'dict-phonetic' }, phonetic) : null,
-        iconButton('volume', '朗读', (e) => speak(text, current?.meta?.sourceLang, e.currentTarget)),
+        iconButton('volume', 'card.speak', (e) => speak(text, current?.meta?.sourceLang, e.currentTarget)),
       );
       return;
     }
     if (ui.sourceBox.className.startsWith('source') && ui.sourceBox.textContent === text) return;
     ui.sourceBox.className = 'source';
-    ui.sourceBox.title = '点击展开 / 收起原文';
+    ui.sourceBox.title = t('card.expand');
     ui.sourceBox.textContent = text;
     ui.sourceBox.onclick = () => ui.sourceBox.classList.toggle('expanded');
   }
@@ -428,9 +446,9 @@
 
   function errorView(error) {
     const actions = [];
-    if (SETTINGS_ERRORS.has(error.code)) actions.push(h('button', { class: 'chip-btn primary', type: 'button', onclick: openSettings }, '打开设置'));
+    if (SETTINGS_ERRORS.has(error.code)) actions.push(h('button', { class: 'chip-btn primary', type: 'button', onclick: openSettings }, t('popup.openSettings')));
     if (error.code !== 'not_configured' && error.code !== 'context_invalidated') {
-      actions.push(h('button', { class: 'chip-btn', type: 'button', onclick: () => translate(current.text, current.targetOverride, true) }, '重试'));
+      actions.push(h('button', { class: 'chip-btn', type: 'button', onclick: () => translate(current.text, current.targetOverride, true) }, t('card.retry')));
     }
     return h(
       'div',
@@ -464,7 +482,7 @@
         current.retried = true;
         send(current);
       } else {
-        fail({ code: 'disconnected', message: '与扩展的连接已断开', detail: '请重试；若扩展刚更新过，请刷新页面' });
+        fail({ code: 'disconnected', message: t('error.disconnected'), detail: t('error.disconnected.detail') });
       }
     });
     return port;
@@ -481,7 +499,7 @@
   function send(request) {
     const p = getPort();
     if (!p) {
-      fail({ code: 'context_invalidated', message: '扩展已更新或被停用', detail: '请刷新页面后再试' });
+      fail({ code: 'context_invalidated', message: t('error.context_invalidated'), detail: t('error.context_invalidated.detail') });
       return;
     }
     p.postMessage({

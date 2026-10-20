@@ -12,10 +12,10 @@
   // Replace a stale copy of this script (e.g. after the extension updated).
   document.dispatchEvent(new CustomEvent('glint:page-teardown'));
 
-  const { h, icon, alive } = GLINT_DOM;
+  const { h, icon, alive, localeOf, localize } = GLINT_DOM;
   const PORT_NAME = 'glint:page';
   const POSITION_KEY = 'ballPosition';
-  const DEFAULTS = { targetLang: 'zh-CN', theme: 'auto', floatBall: true, ballDisabledSites: [], pageStyle: 'dashed' };
+  const DEFAULTS = { targetLang: 'zh-CN', theme: 'auto', uiLang: 'auto', floatBall: true, ballDisabledSites: [], pageStyle: 'dashed' };
   const SETTINGS_ERRORS = new Set(['not_configured', 'auth', 'network', 'http_400', 'http_401', 'http_403', 'http_404']);
   const BATCH_SEGMENTS = 10;
   const BATCH_CHARS = 2000;
@@ -40,7 +40,6 @@
   // Skipped tags whose text still goes into the translation.
   const TEXT_TAGS = new Set(['CODE', 'KBD', 'SAMP', 'VAR']);
   const VIEWS = ['original', 'bilingual', 'translation'];
-  const VIEW_LABELS = { original: '原文', bilingual: '双语', translation: '译文' };
   const HIDDEN_ATTR = 'data-glint-src-hidden';
   const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 
@@ -84,6 +83,10 @@
   function listen(target, type, handler, options) {
     target.addEventListener(type, handler, options);
     cleanups.push(() => target.removeEventListener(type, handler, options));
+  }
+
+  function t(key, params) {
+    return GLINT_I18N.translate(localeOf(settings), key, params);
   }
 
   function primary(code) {
@@ -455,7 +458,7 @@
     const wrapper = unit.wrapper;
     if (!wrapper) return;
     wrapper.dataset.glintState = 'error';
-    wrapper.firstChild.textContent = '翻译失败，点击重试';
+    wrapper.firstChild.textContent = t('page.failed');
     wrapper.title = [error.message, error.detail].filter(Boolean).join('\n');
   }
 
@@ -499,7 +502,7 @@
       // The worker may have been suspended mid-request: retry once.
       const batches = [...inFlight.values()];
       inFlight.clear();
-      for (const batch of batches) settle(batch, batch.texts, { code: 'disconnected', message: '与扩展的连接已断开', detail: '请重试；若扩展刚更新过，请刷新页面' });
+      for (const batch of batches) settle(batch, batch.texts, { code: 'disconnected', message: t('error.disconnected'), detail: t('error.disconnected.detail') });
       renderBall();
     });
     return port;
@@ -591,7 +594,7 @@
     }
     inFlight.delete(message.id);
     if (message.type === 'done') {
-      settle(batch, message.missing.map((i) => batch.texts[i]), { message: '模型没有返回这一段的译文' });
+      settle(batch, message.missing.map((i) => batch.texts[i]), { message: t('error.missing_segment') });
     } else if (message.type === 'error') {
       lastError = message;
       settle(batch, batch.texts, { ...message, final: true });
@@ -715,15 +718,19 @@
     );
     ball.views = h(
       'div',
-      { class: 'views', role: 'radiogroup', 'aria-label': '显示方式' },
+      { class: 'views', role: 'radiogroup', 'aria-label': t('ball.views') },
       VIEWS.map((view) =>
-        h('button', { class: 'view', type: 'button', role: 'radio', 'data-view': view, onclick: () => (alive() ? setView(view) : teardown()) }, VIEW_LABELS[view]),
+        h(
+          'button',
+          { class: 'view', type: 'button', role: 'radio', 'data-view': view, 'data-i18n': `ball.view.${view}`, onclick: () => (alive() ? setView(view) : teardown()) },
+          t(`ball.view.${view}`),
+        ),
       ),
     );
     ball.bubble = h('div', { class: 'bubble', role: 'alert', hidden: true });
     const hide = h(
       'button',
-      { class: 'hide-btn', type: 'button', title: '在此网站隐藏悬浮球（可在弹出面板中恢复）', 'aria-label': '在此网站隐藏悬浮球', onclick: hideOnSite },
+      { class: 'hide-btn', type: 'button', title: t('ball.hide.title'), 'aria-label': t('ball.hide'), onclick: hideOnSite },
       icon('close'),
     );
     ball.dock = h('div', { class: 'dock' }, ball.bubble, ball.views, h('div', { class: 'ball-wrap' }, ball.button, hide));
@@ -744,7 +751,7 @@
     const { busy } = status();
     const state = busy ? 'loading' : active ? 'active' : 'idle';
     ball.dock.dataset.state = state;
-    const label = state === 'loading' ? '正在翻译… 点击显示原文' : active ? '显示原文' : '翻译此网页';
+    const label = t(state === 'loading' ? 'ball.loading' : active ? 'ball.showOriginal' : 'ball.translate');
     ball.button.title = label;
     ball.button.setAttribute('aria-label', label);
     const view = currentView();
@@ -808,11 +815,11 @@
     ensureBall();
     const actions = [];
     if (SETTINGS_ERRORS.has(error.code)) {
-      actions.push(h('button', { class: 'chip-btn primary', type: 'button', onclick: openSettings }, '打开设置'));
+      actions.push(h('button', { class: 'chip-btn primary', type: 'button', onclick: openSettings }, t('popup.openSettings')));
     }
-    actions.push(h('button', { class: 'chip-btn', type: 'button', onclick: hideBubble }, '知道了'));
+    actions.push(h('button', { class: 'chip-btn', type: 'button', onclick: hideBubble }, t('bubble.gotIt')));
     ball.bubble.replaceChildren(
-      h('div', { class: 'bubble-title' }, error.message || '翻译失败'),
+      h('div', { class: 'bubble-title' }, error.message || t('error.unknown')),
       error.detail ? h('div', { class: 'bubble-detail' }, error.detail) : null,
       h('div', { class: 'bubble-actions' }, actions),
     );
@@ -859,8 +866,20 @@
       }
     }
     if (previous.pageStyle !== settings.pageStyle) applyPageStyle();
+    if (localeOf(previous) !== localeOf(settings)) relabel();
     applyTheme();
     renderBall();
+  }
+
+  function relabel() {
+    localize(ball.root, t);
+    ball.views?.setAttribute('aria-label', t('ball.views'));
+    const hide = ball.root?.querySelector('.hide-btn');
+    if (hide) {
+      hide.title = t('ball.hide.title');
+      hide.setAttribute('aria-label', t('ball.hide'));
+    }
+    for (const text of document.querySelectorAll('glint-tr[data-glint-state="error"] > glint-tr-text')) text.textContent = t('page.failed');
   }
 
   function onRuntimeMessage(message, _sender, sendResponse) {

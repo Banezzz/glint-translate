@@ -426,6 +426,31 @@ test('page translation explains a missing configuration on the ball', async () =
   await serviceWorker.evaluate((s) => chrome.storage.local.set(s), saved);
 });
 
+test('the card and the floating ball follow the interface language live', async () => {
+  await setSettings({ uiLang: 'en', theme: 'light' });
+  const page = await context.newPage();
+  await page.goto(`${mock.url}/page.html`);
+  await page.locator('#para').click({ clickCount: 3 });
+  assert.equal(await page.locator('glint-translate .trigger').getAttribute('title'), 'Translate selection');
+  await clickTrigger(page);
+  await page.locator('glint-translate .output:not(.streaming)').waitFor({ timeout: 8000 });
+  assert.equal(await page.locator('glint-translate .lang-source').textContent(), 'English');
+  assert.equal(await page.locator('glint-translate .lang-target span').first().textContent(), 'Simplified Chinese');
+  assert.equal(await page.locator('glint-translate .icon-btn[data-i18n-title="card.retranslate"]').getAttribute('title'), 'Translate again');
+  assert.deepEqual(await page.locator('glint-ball .view').allTextContents(), ['Original', 'Bilingual', 'Translation']);
+  assert.equal(await page.locator('glint-ball .ball').getAttribute('aria-label'), 'Translate this page');
+  await shot(page, 'card-en', { clip: { x: 0, y: 0, width: 1180, height: 560 } });
+
+  // The open card and the ball re-label themselves when the language changes.
+  await setSettings({ uiLang: 'zh-CN' });
+  await page.locator('glint-translate .lang-source', { hasText: '英语' }).waitFor({ timeout: 3000 });
+  assert.equal(await page.locator('glint-translate .icon-btn[data-i18n-title="card.retranslate"]').getAttribute('title'), '重新翻译');
+  assert.deepEqual(await page.locator('glint-ball .view').allTextContents(), ['原文', '双语', '译文']);
+  assert.equal(await page.locator('glint-ball .ball').getAttribute('aria-label'), '翻译此网页');
+  await page.close();
+  await setSettings({ theme: 'auto' });
+});
+
 test('popup translates typed text and shows the provider status', async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 368, height: 600 });
