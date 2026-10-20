@@ -24,6 +24,11 @@ export const DEFAULT_SETTINGS = Object.freeze({
   theme: 'auto',
   fontSize: 15,
   disabledSites: [],
+  // Whole-page bilingual translation.
+  floatBall: true,
+  ballDisabledSites: [],
+  // 'plain' | 'dashed' | 'faded' | 'highlight' | 'border'
+  pageStyle: 'dashed',
 });
 
 export function mergeSettings(stored) {
