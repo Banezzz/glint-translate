@@ -1,7 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { detectSourceLanguage, guessLanguageByScript, languageLabel, resolveTargets } from '../../src/shared/lang.js';
-import { buildSystemPrompt, clampInput, isDictionaryCandidate, MAX_INPUT_CHARS } from '../../src/shared/prompt.js';
+import {
+  buildPagePrompt,
+  buildSystemPrompt,
+  clampInput,
+  DEFAULT_PROMPTS,
+  isDictionaryCandidate,
+  MAX_INPUT_CHARS,
+  PROMPT_FORMATS,
+  renderPrompt,
+} from '../../src/shared/prompt.js';
 import { effectiveProvider, isProviderReady, mergeSettings } from '../../src/shared/settings.js';
 import '../../src/shared/dictionary.js';
 
@@ -59,6 +68,23 @@ test('buildSystemPrompt names both languages', () => {
   assert.match(p, /into English instead/);
   assert.match(buildSystemPrompt({ mode: 'dictionary', target: 'ja', fallback: 'en' }), /dictionary entry for it in Japanese/);
   assert.equal(clampInput('x'.repeat(MAX_INPUT_CHARS + 10)).length, MAX_INPUT_CHARS);
+});
+
+test('custom prompt templates fill variables and keep the output format', () => {
+  const custom = buildSystemPrompt({ mode: 'translate', target: 'zh-CN', fallback: 'en', source: 'fr', template: 'Translate {{from}} into {{to}} like a poet.' });
+  assert.equal(custom, 'Translate French into Simplified Chinese like a poet.');
+  // An unknown source drops the line that needs it.
+  assert.equal(buildSystemPrompt({ mode: 'translate', target: 'ja', fallback: 'en', source: 'und', template: 'Source: {{from}}\nInto {{to}}.' }), 'Into Japanese.');
+  // Parsers depend on the format, so it is appended to custom prompts too.
+  const dictionary = buildSystemPrompt({ mode: 'dictionary', target: 'ja', fallback: 'en', template: 'Define it in {{to}}, kindly.' });
+  assert.ok(dictionary.startsWith('Define it in Japanese, kindly.\n'));
+  assert.ok(dictionary.endsWith(PROMPT_FORMATS.dictionary));
+  const page = buildPagePrompt({ target: 'de', title: 'Docs', template: 'Technical docs titled {{title}}, into {{to}}.' });
+  assert.equal(page, `Technical docs titled Docs, into German.\n${PROMPT_FORMATS.page}`);
+  // A blank custom prompt means the default.
+  assert.equal(buildSystemPrompt({ mode: 'translate', target: 'en', fallback: 'zh-CN', template: '  ' }), buildSystemPrompt({ mode: 'translate', target: 'en', fallback: 'zh-CN' }));
+  assert.equal(renderPrompt('Keep {{unknown}} as is', { to: 'x' }), 'Keep {{unknown}} as is');
+  assert.ok(DEFAULT_PROMPTS.translate.includes('{{to}}'));
 });
 
 test('settings merge and effective provider', () => {
