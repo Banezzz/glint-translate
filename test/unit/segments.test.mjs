@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildSegmentsInput, createSegmentParser } from '../../src/shared/segments.js';
+import { buildPagePrompt } from '../../src/shared/prompt.js';
 
 test('buildSegmentsInput numbers segments from 1', () => {
   assert.equal(buildSegmentsInput(['Hello', 'Two\nlines']), '<seg id="1">Hello</seg>\n<seg id="2">Two\nlines</seg>');
@@ -52,4 +53,12 @@ test('a single segment answered without tags is still used', () => {
   many.push('一\n二');
   assert.deepEqual(many.finish(), []);
   assert.deepEqual(many.missing(), [0, 1]);
+});
+
+test('buildPagePrompt names the target and the page title', () => {
+  const prompt = buildPagePrompt({ target: 'zh-CN', title: 'Reading on the web' });
+  assert.match(prompt, /into Simplified Chinese/);
+  assert.match(prompt, /<seg id="N">/);
+  assert.match(prompt, /titled "Reading on the web"/);
+  assert.doesNotMatch(buildPagePrompt({ target: 'ja' }), /titled/);
 });
