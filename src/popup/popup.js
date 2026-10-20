@@ -10,6 +10,7 @@ let settings;
 let hostname = '';
 let cancel = null;
 let lastResult = '';
+let tab = null;
 
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -49,6 +50,51 @@ function renderToggles() {
   $('siteHost').textContent = hostname;
   $('siteEnabled').checked = !settings.disabledSites.includes(hostname);
   $('siteEnabled').disabled = !settings.enabled;
+}
+
+// Talks to the page-translation script in the tab's top frame, injecting
+// the content scripts first when the tab predates the extension.
+async function pageMessage(action) {
+  const message = { type: 'glint:page', action };
+  try {
+    return await chrome.tabs.sendMessage(tab.id, message, { frameId: 0 });
+  } catch {
+    try {
+      const files = chrome.runtime.getManifest().content_scripts[0].js;
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files });
+      return await chrome.tabs.sendMessage(tab.id, message, { frameId: 0 });
+    } catch {
+      return null;
+    }
+  }
+}
+
+function renderPageButton(state) {
+  const button = $('pageButton');
+  button.hidden = false;
+  button.disabled = !state;
+  button.dataset.active = String(Boolean(state?.active));
+  $('pageTitle').textContent = !state ? '此页面不支持网页翻译' : state.active ? '显示原文' : '翻译此网页';
+  $('pageDesc').textContent = !state
+    ? '浏览器内置页面和应用商店无法注入脚本'
+    : state.active
+      ? `已开启双语对照 · 译为${languageLabel(settings.targetLang)}`
+      : '双语对照，滚动到哪里翻译到哪里';
+}
+
+async function initPageButton() {
+  const commands = await chrome.commands.getAll();
+  $('pageKbd').textContent = commands.find((c) => c.name === 'translate-page')?.shortcut || '';
+  if (!hostname) {
+    renderPageButton(null);
+    return;
+  }
+  renderPageButton(await pageMessage('status'));
+  $('pageButton').addEventListener('click', async () => {
+    const state = await pageMessage('toggle');
+    renderPageButton(state);
+    if (state?.active) window.close();
+  });
 }
 
 function translate() {
@@ -102,7 +148,7 @@ function translate() {
 async function init() {
   settings = await loadSettings();
   applyTheme(settings.theme);
-  const tab = await activeTab();
+  tab = await activeTab();
   try {
     const url = new URL(tab?.url || '');
     if (url.protocol === 'http:' || url.protocol === 'https:') hostname = url.hostname;
@@ -115,6 +161,7 @@ async function init() {
   $('translate').hidden = !ready;
   renderStatus();
   renderToggles();
+  if (ready) initPageButton();
 
   const select = $('targetLang');
   select.replaceChildren(
