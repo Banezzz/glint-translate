@@ -89,6 +89,12 @@ test('settings merge and effective provider', () => {
   assert.equal(isProviderReady(mergeSettings({})), false);
 });
 
+test('settings keep every prompt mode when only some are customized', () => {
+  const s = mergeSettings({ prompts: { page: 'Custom {{to}}' } });
+  assert.deepEqual(s.prompts, { translate: '', dictionary: '', page: 'Custom {{to}}' });
+  assert.equal(s.uiLang, 'auto');
+});
+
 test('parseDictionary reads the dictionary format, including partial input', () => {
   const entry = parseDictionary('/həˈloʊ/\nint. 你好；喂\nn. & v. 招呼\n\ne.g. Hello there! → 你好！\nextra note');
   assert.equal(entry.phonetic, '/həˈloʊ/');

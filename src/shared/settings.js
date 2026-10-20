@@ -22,6 +22,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   dictionary: true,
   // 'auto' | 'light' | 'dark'
   theme: 'auto',
+  // Interface language: 'auto' (follow the browser) | 'zh-CN' | 'en'
+  uiLang: 'auto',
   fontSize: 15,
   disabledSites: [],
   // Whole-page bilingual translation.
@@ -29,6 +31,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   ballDisabledSites: [],
   // 'plain' | 'dashed' | 'faded' | 'highlight' | 'border'
   pageStyle: 'dashed',
+  // Custom system prompt templates per mode; '' means the built-in default.
+  prompts: Object.freeze({ translate: '', dictionary: '', page: '' }),
 });
 
 export function mergeSettings(stored) {
@@ -38,6 +42,7 @@ export function mergeSettings(stored) {
     ...base,
     ...stored,
     provider: { ...base.provider, ...(stored.provider || {}) },
+    prompts: { ...base.prompts, ...(stored.prompts || {}) },
   };
 }
 
@@ -56,6 +61,7 @@ export async function updateSettings(patch, area = storageArea()) {
     ...current,
     ...patch,
     provider: { ...current.provider, ...(patch.provider || {}) },
+    prompts: { ...current.prompts, ...(patch.prompts || {}) },
   });
   await area.set({ [STORAGE_KEY]: next });
   return next;
