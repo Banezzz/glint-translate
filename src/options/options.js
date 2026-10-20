@@ -1,7 +1,8 @@
 import { LANGUAGES, languageLabel } from '../shared/lang.js';
-import { chooseModel, detectEndpoint, normalizeBaseUrl, PROTOCOL_LABELS } from '../shared/providers.js';
+import { chooseModel, detectEndpoint, normalizeBaseUrl } from '../shared/providers.js';
 import { loadSettings, updateSettings } from '../shared/settings.js';
 import { applyTheme, debounce, relativeTime, renderResult, translateStream } from '../ui/common.js';
+import { protocolLabel, setLocale, t } from '../ui/i18n.js';
 
 const PRESETS = [
   { name: 'OpenAI', url: 'https://api.openai.com/v1' },
@@ -110,11 +111,24 @@ function renderConnectionFromSettings() {
   }
   const type = provider.type === 'auto' ? resolved.type : provider.type;
   const count = provider.models.length;
-  const title = `已连接 · ${PROTOCOL_LABELS[type]}${count ? ` · ${count} 个模型` : ''}`;
+  const title = `已连接 · ${protocolLabel(type)}${count ? ` · ${count} 个模型` : ''}`;
   const details = [resolved.baseUrl, resolved.latencyMs ? `${resolved.latencyMs} ms` : '', resolved.checkedAt ? `${relativeTime(resolved.checkedAt)}检测` : '']
     .filter(Boolean)
     .join(' · ');
-  setConnection(resolved.warning ? 'warn' : 'ok', { title, sub: resolved.warning || details });
+  setConnection(resolved.warning ? 'warn' : 'ok', { title, sub: resolved.warning ? warningText(resolved.warning) : details });
+}
+
+// Detection used to store the warning as text; newer versions store a code.
+function warningText(warning) {
+  const key = `detect.warning.${warning}`;
+  const text = t(key);
+  return text === key ? warning : text;
+}
+
+function detectErrorTitle({ code, params = {} }) {
+  if (code === 'auth') return params.protocol ? t('detect.auth_protocol', { protocol: protocolLabel(params.protocol) }) : t('detect.auth');
+  if (code === 'network') return t(params.timedOut ? 'detect.timeout' : 'detect.unreachable');
+  return t(`detect.${code}`, params);
 }
 
 // Typing invalidates the shown status right away; detection runs once the
@@ -150,13 +164,13 @@ async function runDetect() {
     result = await detectEndpoint({ baseUrl, apiKey, type: currentType(), signal: detectController.signal });
   } catch (err) {
     if (seq !== detectSeq) return;
-    result = { ok: false, error: { message: '检测失败', detail: String(err?.message || err) } };
+    result = { ok: false, error: { code: 'failed', params: {}, detail: String(err?.message || err) } };
   }
   if (seq !== detectSeq) return;
 
   if (!result.ok) {
     await save({ provider: { baseUrl, apiKey, resolved: null } }, { quiet: true });
-    setConnection('error', { title: result.error.message, sub: result.error.detail });
+    setConnection('error', { title: detectErrorTitle(result.error), sub: result.error.detail });
     return;
   }
   saveModel.cancel();
@@ -395,6 +409,7 @@ async function runTry() {
 async function init() {
   settings = await loadSettings();
   const { provider } = settings;
+  setLocale(settings.uiLang);
   applyTheme(settings.theme);
   $('version').textContent = `v${chrome.runtime.getManifest().version}`;
 

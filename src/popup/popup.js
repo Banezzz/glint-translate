@@ -1,7 +1,7 @@
 import { LANGUAGES, languageLabel } from '../shared/lang.js';
-import { PROTOCOL_LABELS } from '../shared/providers.js';
 import { effectiveProvider, isProviderReady, loadSettings, updateSettings } from '../shared/settings.js';
 import { applyTheme, renderResult, translateStream } from '../ui/common.js';
+import { protocolLabel, setLocale } from '../ui/i18n.js';
 
 const $ = (id) => document.getElementById(id);
 const TRIGGER_DESC = { icon: '选中文本后显示翻译图标', auto: '选中文本后直接翻译', manual: '仅快捷键与右键菜单' };
@@ -39,7 +39,7 @@ function renderStatus() {
     return;
   }
   const provider = effectiveProvider(settings.provider);
-  $('statusText').textContent = `${provider.model} · ${PROTOCOL_LABELS[provider.type]}`;
+  $('statusText').textContent = `${provider.model} · ${protocolLabel(provider.type)}`;
   $('statusText').title = provider.baseUrl;
 }
 
@@ -148,6 +148,7 @@ function translate() {
 
 async function init() {
   settings = await loadSettings();
+  setLocale(settings.uiLang);
   applyTheme(settings.theme);
   tab = await activeTab();
   try {
