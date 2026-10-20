@@ -36,6 +36,13 @@ before(async () => {
   });
   serviceWorker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
   extensionId = new URL(serviceWorker.url()).host;
+  // A fresh install opens the settings page by itself. Wait for it and close
+  // it, so it cannot take over a page a test is navigating to settings.
+  const installed = (p) => p.url().startsWith(`chrome-extension://${extensionId}/src/options/`);
+  for (let waited = 0; waited < 10_000 && !context.pages().some(installed); waited += 100) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  await Promise.all(context.pages().filter(installed).map((p) => p.close()));
   // The interface otherwise follows the browser language; tests assert Chinese text.
   await serviceWorker.evaluate(() => chrome.storage.local.set({ settings: { uiLang: 'zh-CN' } }));
 });
