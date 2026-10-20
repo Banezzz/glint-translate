@@ -10,6 +10,7 @@ let settings;
 let hostname = '';
 let cancel = null;
 let lastResult = '';
+let tab = null;
 
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -49,6 +50,52 @@ function renderToggles() {
   $('siteHost').textContent = hostname;
   $('siteEnabled').checked = !settings.disabledSites.includes(hostname);
   $('siteEnabled').disabled = !settings.enabled;
+  $('ballRow').hidden = !hostname;
+  $('ballEnabled').checked = settings.floatBall && !settings.ballDisabledSites.includes(hostname);
+}
+
+// Talks to the page-translation script in the tab's top frame, injecting
+// the content scripts first when the tab predates the extension.
+async function pageMessage(action, extra = {}) {
+  const message = { type: 'glint:page', action, ...extra };
+  try {
+    return await chrome.tabs.sendMessage(tab.id, message, { frameId: 0 });
+  } catch {
+    try {
+      const files = chrome.runtime.getManifest().content_scripts[0].js;
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files });
+      return await chrome.tabs.sendMessage(tab.id, message, { frameId: 0 });
+    } catch {
+      return null;
+    }
+  }
+}
+
+function renderPageCard(state) {
+  $('pageCard').hidden = false;
+  $('pageCard').classList.toggle('unsupported', !state);
+  for (const radio of document.querySelectorAll('input[name="pageView"]')) {
+    radio.checked = radio.value === (state?.view || 'original');
+    radio.disabled = !state;
+  }
+  $('pageDesc').textContent = !state
+    ? '此页面不支持（浏览器内置页面和应用商店）'
+    : state.view === 'original'
+      ? `选择双语对照或仅译文，译为${languageLabel(settings.targetLang)}`
+      : `已开启 · 译为${languageLabel(settings.targetLang)}，滚动到哪里翻译到哪里`;
+}
+
+async function initPageCard() {
+  const commands = await chrome.commands.getAll();
+  $('pageKbd').textContent = commands.find((c) => c.name === 'translate-page')?.shortcut || '';
+  if (!hostname) {
+    renderPageCard(null);
+    return;
+  }
+  renderPageCard(await pageMessage('status'));
+  for (const radio of document.querySelectorAll('input[name="pageView"]')) {
+    radio.addEventListener('change', async () => renderPageCard(await pageMessage('view', { view: radio.value })));
+  }
 }
 
 function translate() {
@@ -102,7 +149,7 @@ function translate() {
 async function init() {
   settings = await loadSettings();
   applyTheme(settings.theme);
-  const tab = await activeTab();
+  tab = await activeTab();
   try {
     const url = new URL(tab?.url || '');
     if (url.protocol === 'http:' || url.protocol === 'https:') hostname = url.hostname;
@@ -115,6 +162,7 @@ async function init() {
   $('translate').hidden = !ready;
   renderStatus();
   renderToggles();
+  if (ready) initPageCard();
 
   const select = $('targetLang');
   select.replaceChildren(
@@ -154,6 +202,14 @@ async function init() {
     if (e.target.checked) sites.delete(hostname);
     else sites.add(hostname);
     settings = await updateSettings({ disabledSites: [...sites] });
+    renderToggles();
+  });
+  $('ballEnabled').addEventListener('change', async (e) => {
+    const sites = new Set(settings.ballDisabledSites);
+    if (e.target.checked) sites.delete(hostname);
+    else sites.add(hostname);
+    // Turning it on for a site also brings back a globally hidden ball.
+    settings = await updateSettings({ ballDisabledSites: [...sites], ...(e.target.checked ? { floatBall: true } : {}) });
     renderToggles();
   });
 

@@ -20,7 +20,15 @@ export default [
     files: ['src/content/**/*.js'],
     languageOptions: {
       sourceType: 'script',
-      globals: { GLINT_LANGUAGES: 'readonly', GLINT_PARSE_DICTIONARY: 'readonly', GLINT_CARD_CSS: 'readonly', GLINT_ICONS: 'readonly' },
+      globals: {
+        GLINT_LANGUAGES: 'readonly',
+        GLINT_PARSE_DICTIONARY: 'readonly',
+        GLINT_CARD_CSS: 'readonly',
+        GLINT_PAGE_CSS: 'readonly',
+        GLINT_BALL_CSS: 'readonly',
+        GLINT_ICONS: 'readonly',
+        GLINT_DOM: 'readonly',
+      },
     },
   },
   {

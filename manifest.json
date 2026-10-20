@@ -3,7 +3,7 @@
   "name": "Glint 划词翻译",
   "short_name": "Glint",
   "version": "0.1.0",
-  "description": "选中即译，接入你自己的 OpenAI / Claude 兼容大模型。自动识别接口协议与可用模型。",
+  "description": "划词翻译与网页双语对照翻译，接入你自己的 OpenAI / Claude 兼容大模型，自动识别接口协议与可用模型。",
   "minimum_chrome_version": "123",
   "icons": {
     "16": "icons/icon-16.png",
@@ -29,7 +29,16 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["src/shared/languages.js", "src/shared/dictionary.js", "src/content/card-styles.js", "src/content/icons.js", "src/content/content.js"],
+      "js": [
+        "src/shared/languages.js",
+        "src/shared/dictionary.js",
+        "src/content/card-styles.js",
+        "src/content/page-styles.js",
+        "src/content/icons.js",
+        "src/content/dom.js",
+        "src/content/content.js",
+        "src/content/page.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     }
@@ -40,6 +49,12 @@
         "default": "Alt+T"
       },
       "description": "翻译选中的文本"
+    },
+    "translate-page": {
+      "suggested_key": {
+        "default": "Alt+A"
+      },
+      "description": "翻译整个网页（双语对照）/ 显示原文"
     }
   }
 }
