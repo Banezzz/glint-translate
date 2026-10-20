@@ -51,6 +51,7 @@ globalThis.GLINT_BALL_CSS = `
   --g-muted: #656d76;
   --g-accent: #5b5bd6;
   --g-danger: #dc3e42;
+  --g-hover: rgba(15, 23, 42, 0.05);
   --g-shadow: 0 0 0 1px rgba(15, 23, 42, 0.04), 0 4px 10px -2px rgba(15, 23, 42, 0.12), 0 12px 28px -6px rgba(15, 23, 42, 0.18);
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   font-size: 13px; line-height: 1.45; color: var(--g-text);
@@ -63,6 +64,7 @@ globalThis.GLINT_BALL_CSS = `
   --g-muted: #a1a1aa;
   --g-accent: #a5a8f5;
   --g-danger: #ff7b80;
+  --g-hover: rgba(255, 255, 255, 0.07);
   --g-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 12px 28px -6px rgba(0, 0, 0, 0.55);
 }
 
@@ -131,17 +133,29 @@ svg { display: block; flex: none; }
 .dock:hover:not(.dragging) .hide-btn { opacity: 1; pointer-events: auto; }
 .ball-wrap { position: relative; }
 
-.tip {
-  padding: 5px 10px;
-  border-radius: 8px;
-  white-space: nowrap; font-size: 12.5px; font-weight: 550;
-  color: var(--g-text); background: var(--g-surface);
+/* Original / bilingual / translation-only switch, shown on hover. */
+.views {
+  display: flex; gap: 2px; padding: 3px;
+  border-radius: 10px;
+  background: var(--g-surface);
   box-shadow: var(--g-shadow);
   opacity: 0; transform: translateX(6px); pointer-events: none;
   transition: opacity 140ms ease, transform 140ms ease;
 }
-.tip kbd { margin-left: 6px; font: inherit; font-size: 11.5px; color: var(--g-muted); }
-.dock:hover:not(.dragging) .tip { opacity: 1; transform: translateX(0); }
+.dock:hover:not(.dragging) .views, .views:focus-within { opacity: 1; transform: translateX(0); pointer-events: auto; }
+.view {
+  height: 26px; padding: 0 10px;
+  border-radius: 7px;
+  white-space: nowrap; font-size: 12.5px; font-weight: 550;
+  color: var(--g-muted);
+  transition: background 120ms ease, color 120ms ease;
+}
+.view:hover { color: var(--g-text); background: var(--g-hover); }
+.view[aria-checked="true"] {
+  color: #fff;
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  box-shadow: 0 2px 6px -2px rgba(99, 102, 241, 0.6);
+}
 
 .bubble {
   position: absolute; right: 54px; top: 50%;
@@ -152,7 +166,7 @@ svg { display: block; flex: none; }
   transform: translateY(-50%);
   animation: g-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.dock:hover .bubble:not([hidden]) ~ .tip { opacity: 0; }
+.dock:hover .bubble:not([hidden]) ~ .views { opacity: 0; pointer-events: none; }
 .bubble-title { font-weight: 650; color: var(--g-danger); }
 .bubble-detail { margin-top: 2px; font-size: 12px; color: var(--g-muted); word-break: break-word; }
 .bubble-actions { display: flex; gap: 6px; margin-top: 8px; }
@@ -166,7 +180,7 @@ svg { display: block; flex: none; }
 @keyframes g-spin { to { transform: rotate(360deg); } }
 @keyframes g-in { from { opacity: 0; transform: translateY(-50%) translateX(6px); } }
 @media (prefers-reduced-motion: reduce) {
-  .ball, .tip, .hide-btn { transition: none; }
+  .ball, .views, .hide-btn { transition: none; }
   .ring { animation-duration: 2.4s; }
 }
 `;

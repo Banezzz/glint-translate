@@ -40,6 +40,7 @@
   // Skipped tags whose text still goes into the translation.
   const TEXT_TAGS = new Set(['CODE', 'KBD', 'SAMP', 'VAR']);
   const VIEWS = ['original', 'bilingual', 'translation'];
+  const VIEW_LABELS = { original: '原文', bilingual: '双语', translation: '译文' };
   const HIDDEN_ATTR = 'data-glint-src-hidden';
   const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 
@@ -678,7 +679,7 @@
 
   // ------------------------------------------------------------------ ball
 
-  const ball = { host: null, root: null, dock: null, button: null, tip: null, bubble: null, bubbleTimer: 0, top: null };
+  const ball = { host: null, root: null, dock: null, button: null, views: null, bubble: null, bubbleTimer: 0, top: null };
 
   function ballVisible() {
     return Boolean(settings.floatBall && !settings.ballDisabledSites.includes(location.hostname) && document.body);
@@ -712,14 +713,20 @@
       },
       icon('languages'),
     );
-    ball.tip = h('span', { class: 'tip' });
+    ball.views = h(
+      'div',
+      { class: 'views', role: 'radiogroup', 'aria-label': '显示方式' },
+      VIEWS.map((view) =>
+        h('button', { class: 'view', type: 'button', role: 'radio', 'data-view': view, onclick: () => (alive() ? setView(view) : teardown()) }, VIEW_LABELS[view]),
+      ),
+    );
     ball.bubble = h('div', { class: 'bubble', role: 'alert', hidden: true });
     const hide = h(
       'button',
       { class: 'hide-btn', type: 'button', title: '在此网站隐藏悬浮球（可在弹出面板中恢复）', 'aria-label': '在此网站隐藏悬浮球', onclick: hideOnSite },
       icon('close'),
     );
-    ball.dock = h('div', { class: 'dock' }, ball.bubble, ball.tip, h('div', { class: 'ball-wrap' }, ball.button, hide));
+    ball.dock = h('div', { class: 'dock' }, ball.bubble, ball.views, h('div', { class: 'ball-wrap' }, ball.button, hide));
     ball.root = h('div', { class: 'ball-root' }, ball.dock);
     shadow.append(ball.root);
     document.documentElement.append(ball.host);
@@ -737,9 +744,11 @@
     const { busy } = status();
     const state = busy ? 'loading' : active ? 'active' : 'idle';
     ball.dock.dataset.state = state;
-    const label = state === 'loading' ? '正在翻译… 点击显示原文' : active ? '显示原文' : '翻译此网页（双语对照）';
-    ball.tip.textContent = label;
+    const label = state === 'loading' ? '正在翻译… 点击显示原文' : active ? '显示原文' : '翻译此网页';
+    ball.button.title = label;
     ball.button.setAttribute('aria-label', label);
+    const view = currentView();
+    for (const button of ball.views.children) button.setAttribute('aria-checked', String(button.dataset.view === view));
     const ring = ball.button.querySelector('.ring');
     if (busy && !ring) ball.button.append(h('span', { class: 'ring' }));
     else if (!busy) ring?.remove();

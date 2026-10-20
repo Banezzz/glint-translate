@@ -238,12 +238,22 @@ async function clickBall(page) {
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
+async function chooseView(page, view) {
+  await page.locator('glint-ball .ball').hover();
+  const option = page.locator(`glint-ball .view[data-view="${view}"]`);
+  await option.waitFor({ state: 'visible' });
+  await page.waitForTimeout(200);
+  await option.click();
+  await page.locator(`glint-ball .view[data-view="${view}"][aria-checked="true"]`).waitFor({ timeout: 3000 });
+}
+
 const translationOf = (page, id) => page.locator(`#${id} > glint-tr[data-glint-state="done"]`);
 
 test('the floating ball translates the page bilingually, lazily and reversibly', async () => {
   await setSettings({ theme: 'light', pageStyle: 'dashed', floatBall: true, ballDisabledSites: [] });
   const page = await context.newPage();
   await page.goto(`${mock.url}/article.html`);
+  const originalHtml = await page.locator('body').innerHTML();
   const before = mock.requests.length;
   await clickBall(page);
 
@@ -294,7 +304,27 @@ test('the floating ball translates the page bilingually, lazily and reversibly',
   await setSettings({ pageStyle: 'highlight' });
   await page.locator('#p1 > glint-tr[data-glint-style="highlight"]').waitFor({ timeout: 3000 });
 
-  // Clicking again restores the original page.
+  // The hover switch shows the translation alone, in place of the source.
+  await page.evaluate(() => scrollTo(0, 0));
+  await chooseView(page, 'translation');
+  const text = (id) => page.locator(`#${id}`).evaluate((el) => el.innerText.trim());
+  assert.equal(await text('p1'), ARTICLE_ZH[ARTICLE_PARAGRAPHS[0]]);
+  assert.equal(await text('p2'), ARTICLE_ZH[ARTICLE_PARAGRAPHS[1]]);
+  assert.equal(await text('title'), ARTICLE_ZH['Reading in two languages']);
+  assert.equal(await page.locator('nav').evaluate((el) => el.innerText.replace(/\s+/g, ' ').trim()), '首页 文章 关于我们');
+  // Untranslated content is untouched; links stay links.
+  assert.equal(await text('code'), 'const answer = translate("do not touch");');
+  assert.equal(await text('zh-para'), '这一段已经是中文了，不需要再翻译。');
+  assert.equal(await page.locator('nav a').first().evaluate((el) => el.innerText.trim()), '首页');
+  assert.equal(await page.locator('glint-ball .view[aria-checked="true"]').textContent(), '译文');
+  await page.mouse.move(400, 300);
+  await shot(page, 'page-translation-only', { clip: { x: 0, y: 0, width: 1180, height: 820 } });
+
+  // Back to bilingual: source and translation side by side again.
+  await chooseView(page, 'bilingual');
+  assert.equal(await text('p1'), `${ARTICLE_PARAGRAPHS[0]}\n${ARTICLE_ZH[ARTICLE_PARAGRAPHS[0]]}`);
+
+  // Clicking the ball shows the original page, restored exactly.
   await clickBall(page);
   await page.locator('glint-ball .dock[data-state="idle"]').waitFor({ timeout: 3000 });
   assert.equal(await page.locator('glint-tr').count(), 0);
@@ -305,6 +335,20 @@ test('the floating ball translates the page bilingually, lazily and reversibly',
   await clickBall(page);
   await translationOf(page, 'p1').waitFor({ timeout: 8000 });
   assert.equal(mock.requests.slice(beforeAgain).filter((r) => r.path === '/openai/v1/chat/completions').length, 0);
+
+  // After peeking at the original, the ball returns to the last translated view.
+  await chooseView(page, 'translation');
+  await clickBall(page);
+  await page.locator('glint-ball .dock[data-state="idle"]').waitFor({ timeout: 3000 });
+  await clickBall(page);
+  await page.locator('#p1 > glint-tr[data-glint-view="translation"][data-glint-state="done"]').waitFor({ timeout: 8000 });
+  assert.equal(await text('p1'), ARTICLE_ZH[ARTICLE_PARAGRAPHS[0]]);
+  // Original view via the switch puts every node back as it was.
+  await chooseView(page, 'original');
+  await page.locator('glint-ball .dock[data-state="idle"]').waitFor({ timeout: 3000 });
+  await page.locator('#added').evaluate((el) => el.remove());
+  await page.locator('#hidden-menu').evaluate((el) => el.classList.add('hidden'));
+  assert.equal(await page.locator('body').innerHTML(), originalHtml);
   await page.close();
   await setSettings({ pageStyle: 'dashed', theme: 'auto' });
 });
