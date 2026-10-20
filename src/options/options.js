@@ -3,6 +3,7 @@ import { chooseModel, detectEndpoint, normalizeBaseUrl } from '../shared/provide
 import { loadSettings, updateSettings } from '../shared/settings.js';
 import { applyTheme, debounce, relativeTime, renderResult, translateStream } from '../ui/common.js';
 import { applyI18n, getLocale, protocolLabel, setLocale, t } from '../ui/i18n.js';
+import { initQuickToggles } from '../ui/quick-toggles.js';
 
 const PRESETS = [
   { name: 'OpenAI', url: 'https://api.openai.com/v1' },
@@ -510,10 +511,19 @@ async function init() {
     }
   });
 
+  const renderQuick = initQuickToggles({ themeButton: $('themeToggle'), languageButton: $('langToggle'), getSettings: () => settings });
+
   // Keep in sync with changes made elsewhere (e.g. the popup).
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local' || !changes.settings?.newValue) return;
     const next = changes.settings.newValue;
+    settings = { ...settings, ...next };
+    if (next.theme && next.theme !== document.querySelector('input[name="theme"]:checked')?.value) {
+      checkRadio('theme', next.theme);
+      applyTheme(next.theme);
+    }
+    // After a possible language switch below, so titles use the new language.
+    queueMicrotask(renderQuick);
     if (next.enabled !== $('enabled').checked) $('enabled').checked = next.enabled;
     if (next.targetLang !== $('targetLang').value) $('targetLang').value = next.targetLang;
     if (next.floatBall !== undefined && next.floatBall !== $('floatBall').checked) $('floatBall').checked = next.floatBall;

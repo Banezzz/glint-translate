@@ -17,7 +17,11 @@
           <h1 data-i18n="app.name">Glint 划词翻译</h1>
           <p data-i18n="options.tagline">选中即译，接入你自己的 OpenAI / Claude 兼容大模型</p>
         </div>
-        <span class="version" id="version"></span>
+        <div class="quick">
+          <span class="version" id="version"></span>
+          <button class="icon-btn" id="themeToggle" type="button"></button>
+          <button class="lang-toggle" id="langToggle" type="button"><span data-locale="zh-CN">中</span><span data-locale="en">EN</span></button>
+        </div>
       </header>
 
       <section class="panel" aria-labelledby="sec-provider">

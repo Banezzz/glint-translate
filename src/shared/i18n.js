@@ -170,6 +170,8 @@
       'bubble.gotIt': '知道了',
       'menu.selection': '用 Glint 翻译“%s”',
       'menu.page': '翻译此网页（双语对照）/ 显示原文',
+      'quick.theme': '主题：{name}（点击切换）',
+      'quick.language': '界面语言：{name}（点击切换）',
     },
     en: {
       'lang.auto': 'Auto-detect',
@@ -336,6 +338,8 @@
       'bubble.gotIt': 'Got it',
       'menu.selection': 'Translate “%s” with Glint',
       'menu.page': 'Translate this page (bilingual) / Show original',
+      'quick.theme': 'Theme: {name} (click to change)',
+      'quick.language': 'Language: {name} (click to change)',
     },
   };
 

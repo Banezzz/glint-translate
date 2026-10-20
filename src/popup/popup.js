@@ -2,6 +2,7 @@ import { LANGUAGES, languageLabel } from '../shared/lang.js';
 import { effectiveProvider, isProviderReady, loadSettings, updateSettings } from '../shared/settings.js';
 import { applyTheme, renderResult, translateStream } from '../ui/common.js';
 import { applyI18n, getLocale, protocolLabel, setLocale, t } from '../ui/i18n.js';
+import { initQuickToggles } from '../ui/quick-toggles.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -178,6 +179,7 @@ async function init() {
   setLocale(settings.uiLang);
   applyI18n();
   applyTheme(settings.theme);
+  const renderQuick = initQuickToggles({ themeButton: $('themeToggle'), languageButton: $('langToggle'), getSettings: () => settings });
   tab = await activeTab();
   try {
     const url = new URL(tab?.url || '');
@@ -246,6 +248,8 @@ async function init() {
     const previous = settings;
     settings = { ...settings, ...next };
     if (next.uiLang !== previous.uiLang) applyLocale(next.uiLang);
+    if (next.theme !== previous.theme) applyTheme(next.theme);
+    renderQuick();
   });
 
   if (ready) {

@@ -451,6 +451,52 @@ test('the card and the floating ball follow the interface language live', async 
   await setSettings({ theme: 'auto' });
 });
 
+test('the theme and language toggles update every page at once', async () => {
+  await setSettings({ theme: 'auto', uiLang: 'zh-CN' });
+  const article = await context.newPage();
+  await article.emulateMedia({ colorScheme: 'light' });
+  await article.goto(`${mock.url}/article.html`);
+  await article.locator('glint-ball .ball').waitFor();
+  const options = await openOptions();
+  await options.emulateMedia({ colorScheme: 'light' });
+  const popup = await context.newPage();
+  await popup.emulateMedia({ colorScheme: 'light' });
+  await popup.setViewportSize({ width: 368, height: 600 });
+  await popup.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+  await popup.locator('#translate').waitFor();
+  assert.equal(await popup.getAttribute('#themeToggle', 'title'), '主题：跟随系统（点击切换）');
+
+  // System → light → dark.
+  await popup.click('#themeToggle');
+  await popup.locator('html[data-theme="light"]').waitFor({ timeout: 3000 });
+  await popup.click('#themeToggle');
+  await popup.locator('html[data-theme="dark"]').waitFor({ timeout: 3000 });
+  assert.equal(await popup.getAttribute('#themeToggle', 'data-theme'), 'dark');
+  await options.locator('html[data-theme="dark"]').waitFor({ timeout: 3000 });
+  assert.equal(await options.locator('input[name="theme"][value="dark"]').isChecked(), true);
+  await article.locator('glint-ball .ball-root[data-theme="dark"]').waitFor({ state: 'attached', timeout: 3000 });
+  await shot(popup, 'popup-dark', { fullPage: true });
+
+  // 中 → EN, everywhere.
+  await popup.click('#langToggle');
+  await popup.locator('#translateButton span', { hasText: 'Translate' }).waitFor({ timeout: 3000 });
+  assert.equal(await popup.getAttribute('#langToggle span.on', 'data-locale'), 'en');
+  assert.equal(await popup.getAttribute('#themeToggle', 'title'), 'Theme: Dark (click to change)');
+  await options.locator('h1', { hasText: 'Glint Translate' }).waitFor({ timeout: 3000 });
+  assert.equal(await options.getAttribute('#langToggle', 'title'), 'Language: English (click to change)');
+  await article.locator('glint-ball .view', { hasText: 'Bilingual' }).waitFor({ timeout: 3000 });
+  await options.locator('.hero').screenshot({ path: join(ARTIFACTS, 'options-hero-dark-en.png'), animations: 'disabled' });
+
+  await popup.click('#langToggle');
+  await options.locator('h1', { hasText: 'Glint 划词翻译' }).waitFor({ timeout: 3000 });
+  await popup.click('#themeToggle');
+  await article.locator('glint-ball .ball-root[data-theme="light"]').waitFor({ state: 'attached', timeout: 3000 });
+  const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
+  assert.equal(stored.settings.theme, 'auto');
+  assert.equal(stored.settings.uiLang, 'zh-CN');
+  await Promise.all([article.close(), options.close(), popup.close()]);
+});
+
 test('popup translates typed text and shows the provider status', async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 368, height: 600 });

@@ -206,3 +206,5 @@ body { min-height: 100vh; }
   .choices { grid-template-columns: minmax(0, 1fr); }
   .styles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+.hero .quick { gap: 6px; }
+.hero .quick .version { margin-right: 4px; }
