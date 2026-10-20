@@ -1,15 +1,18 @@
 import { detectSourceLanguage, resolveTargets } from '../shared/lang.js';
-import { buildSystemPrompt, clampInput, isDictionaryCandidate } from '../shared/prompt.js';
+import { buildPagePrompt, buildSystemPrompt, clampInput, isDictionaryCandidate } from '../shared/prompt.js';
+import { MAX_BATCH_CHARS, MAX_BATCH_SEGMENTS, buildSegmentsInput, createSegmentParser } from '../shared/segments.js';
 import { effectiveProvider, isProviderReady, loadSettings } from '../shared/settings.js';
 import { buildChatRequest, streamChat, TranslationError } from '../shared/translator.js';
 
 const PORT_NAME = 'glint:translate';
+const PAGE_PORT_NAME = 'glint:page';
 const MENU_ID = 'glint-translate-selection';
 const CONTENT_SCRIPTS = chrome.runtime.getManifest().content_scripts[0].js;
 
-// Recent results, so reopening the same selection is instant. Lost whenever
-// the worker is suspended, which is fine.
+// Recent results, so reopening the same selection (or revisiting a page) is
+// instant. Lost whenever the worker is suspended, which is fine.
 const cache = new Map();
+const segmentCache = new Map();
 
 function remember(store, limit, key, value) {
   store.delete(key);
@@ -90,6 +93,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === PAGE_PORT_NAME) {
+    handlePagePort(port);
+    return;
+  }
   if (port.name !== PORT_NAME) return;
   let controller = null;
   port.onMessage.addListener((message) => {
@@ -171,3 +178,87 @@ async function runTranslation(port, message, signal) {
   }
 }
 
+/**
+ * Whole-page port. Several batches may be in flight at once.
+ *   in:  { type: 'batch', id, segments: string[], title?, targetLang? } | { type: 'cancel', id? }
+ *   out: { type: 'segment', id, index, text }   (index into segments)
+ *        { type: 'done', id, missing: number[] } | { type: 'error', id, code, message, detail }
+ */
+function handlePagePort(port) {
+  const controllers = new Map();
+  port.onMessage.addListener((message) => {
+    if (message?.type === 'batch') {
+      const controller = new AbortController();
+      controllers.set(message.id, controller);
+      runBatch(port, message, controller.signal).finally(() => controllers.delete(message.id));
+    } else if (message?.type === 'cancel') {
+      for (const [id, controller] of controllers) {
+        if (message.id === undefined || message.id === id) controller.abort();
+      }
+    }
+  });
+  port.onDisconnect.addListener(() => {
+    for (const controller of controllers.values()) controller.abort();
+  });
+}
+
+async function runBatch(port, message, signal) {
+  const { id } = message;
+  const post = (payload) => {
+    if (signal.aborted) return;
+    try {
+      port.postMessage({ id, ...payload });
+    } catch {
+      // The page went away.
+    }
+  };
+
+  const settings = await loadSettings();
+  if (!isProviderReady(settings)) {
+    post(NOT_CONFIGURED);
+    return;
+  }
+  const segments = (Array.isArray(message.segments) ? message.segments : [])
+    .slice(0, MAX_BATCH_SEGMENTS)
+    .map((text) => String(text).trim().slice(0, MAX_BATCH_CHARS));
+  const provider = effectiveProvider(settings.provider);
+  const target = message.targetLang || settings.targetLang;
+  const keyOf = (text) => JSON.stringify([provider.baseUrl, provider.model, 'page', target, text]);
+
+  // Serve what is cached; only the rest goes to the model.
+  const pending = [];
+  segments.forEach((text, index) => {
+    const cached = segmentCache.get(keyOf(text));
+    if (cached !== undefined) post({ type: 'segment', index, text: cached });
+    else pending.push(index);
+  });
+  if (!pending.length) {
+    post({ type: 'done', missing: [] });
+    return;
+  }
+
+  const release = keepAlive();
+  try {
+    const request = buildChatRequest({
+      ...provider,
+      system: buildPagePrompt({ target, title: message.title }),
+      text: buildSegmentsInput(pending.map((i) => segments[i])),
+      maxTokens: 4096,
+    });
+    const parser = createSegmentParser(pending.length);
+    const emit = (found) => {
+      for (const { index, text } of found) {
+        const original = pending[index];
+        remember(segmentCache, 3000, keyOf(segments[original]), text);
+        post({ type: 'segment', index: original, text });
+      }
+    };
+    for await (const delta of streamChat({ request, signal })) emit(parser.push(delta));
+    emit(parser.finish());
+    post({ type: 'done', missing: parser.missing().map((i) => pending[i]) });
+  } catch (err) {
+    if (!signal.aborted) post(errorPayload(err));
+  } finally {
+    release();
+  }
+}
