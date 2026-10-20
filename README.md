@@ -32,7 +32,7 @@
 
 <p>
   <img src="docs/images/options-provider.png" alt="设置页：自动检测接口与模型" width="560" />
-  <img src="docs/images/popup.png" alt="弹出面板" width="260" />
+  <img src="docs/images/popup.png" alt="弹出面板：网页翻译显示方式、主题与语言切换" width="260" />
 </p>
 
 ## 安装
@@ -100,6 +100,10 @@
 ## 自定义提示词
 
 在设置页的「提示词」中，用顶部的分段按钮在「划词翻译 / 单词词典 / 网页翻译」之间切换，直接编辑发给模型的系统提示词。改动会自动保存，改过的类型会标一个小圆点，可以一键恢复默认。
+
+<p>
+  <img src="docs/images/options-prompts.png" alt="设置页：提示词编辑器" width="560" />
+</p>
 
 | 变量 | 含义 | 可用于 |
 | --- | --- | --- |
