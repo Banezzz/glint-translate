@@ -328,6 +328,20 @@ test('page translation also runs from the menu/shortcut message', async () => {
   await page.close();
 });
 
+test('page translation explains a missing configuration on the ball', async () => {
+  const saved = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
+  await setSettings({ provider: { baseUrl: '', model: '', resolved: null } });
+  const page = await context.newPage();
+  await page.goto(`${mock.url}/article.html`);
+  await clickBall(page);
+  await page.locator('glint-ball .bubble').waitFor({ timeout: 5000 });
+  assert.match(await page.locator('glint-ball .bubble-title').textContent(), /还没有配置模型服务/);
+  assert.equal(await page.locator('glint-ball .chip-btn.primary').textContent(), '打开设置');
+  await page.locator('#p1 > glint-tr[data-glint-state="error"]').waitFor({ timeout: 5000 });
+  await page.close();
+  await serviceWorker.evaluate((s) => chrome.storage.local.set(s), saved);
+});
+
 test('popup translates typed text and shows the provider status', async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 368, height: 600 });

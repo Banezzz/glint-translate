@@ -400,6 +400,7 @@
   function retry(unit) {
     if (!unit.wrapper) return;
     halted = null;
+    hideBubble();
     unit.retries = 0;
     unit.wrapper.dataset.glintState = 'loading';
     unit.wrapper.firstChild.textContent = '';
@@ -528,6 +529,7 @@
         halted = message;
         for (const unit of queue.splice(0)) fail(unit, message);
       }
+      showBubble(message);
     }
     schedulePump();
     renderBall();
@@ -541,6 +543,7 @@
     active = true;
     lastError = null;
     halted = null;
+    hideBubble();
     ensureSheet();
     scanAll();
     mutations.observe(document.body, { childList: true, subtree: true, characterData: true });
@@ -568,6 +571,7 @@
     rootsByTarget.clear();
     dirty.clear();
     for (const wrapper of document.querySelectorAll('glint-tr')) wrapper.remove();
+    hideBubble();
     renderBall();
   }
 
@@ -582,7 +586,7 @@
 
   // ------------------------------------------------------------------ ball
 
-  const ball = { host: null, root: null, dock: null, button: null, tip: null, top: null };
+  const ball = { host: null, root: null, dock: null, button: null, tip: null, bubble: null, bubbleTimer: 0, top: null };
 
   function ballVisible() {
     return Boolean(settings.floatBall && !settings.ballDisabledSites.includes(location.hostname) && document.body);
@@ -617,7 +621,8 @@
       icon('languages'),
     );
     ball.tip = h('span', { class: 'tip' });
-    ball.dock = h('div', { class: 'dock' }, ball.tip, ball.button);
+    ball.bubble = h('div', { class: 'bubble', role: 'alert', hidden: true });
+    ball.dock = h('div', { class: 'dock' }, ball.bubble, ball.tip, ball.button);
     ball.root = h('div', { class: 'ball-root' }, ball.dock);
     shadow.append(ball.root);
     document.documentElement.append(ball.host);
@@ -679,6 +684,37 @@
     ball.button.addEventListener('pointermove', move);
     ball.button.addEventListener('pointerup', end);
     ball.button.addEventListener('pointercancel', end);
+  }
+
+  function showBubble(error) {
+    if (!ballVisible()) return;
+    ensureBall();
+    const actions = [];
+    if (SETTINGS_ERRORS.has(error.code)) {
+      actions.push(h('button', { class: 'chip-btn primary', type: 'button', onclick: openSettings }, '打开设置'));
+    }
+    actions.push(h('button', { class: 'chip-btn', type: 'button', onclick: hideBubble }, '知道了'));
+    ball.bubble.replaceChildren(
+      h('div', { class: 'bubble-title' }, error.message || '翻译失败'),
+      error.detail ? h('div', { class: 'bubble-detail' }, error.detail) : null,
+      h('div', { class: 'bubble-actions' }, actions),
+    );
+    ball.bubble.hidden = false;
+    clearTimeout(ball.bubbleTimer);
+    ball.bubbleTimer = setTimeout(hideBubble, 8000);
+  }
+
+  function hideBubble() {
+    if (ball.bubble) ball.bubble.hidden = true;
+  }
+
+  function openSettings() {
+    hideBubble();
+    try {
+      chrome.runtime.sendMessage({ type: 'glint:open-options' }).catch(() => {});
+    } catch {
+      teardown();
+    }
   }
 
   // ------------------------------------------------------------- settings

@@ -125,7 +125,28 @@ svg { display: block; flex: none; }
 .tip kbd { margin-left: 6px; font: inherit; font-size: 11.5px; color: var(--g-muted); }
 .dock:hover:not(.dragging) .tip { opacity: 1; transform: translateX(0); }
 
+.bubble {
+  position: absolute; right: 54px; top: 50%;
+  width: 260px; padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--g-surface);
+  box-shadow: var(--g-shadow);
+  transform: translateY(-50%);
+  animation: g-in 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.dock:hover .bubble:not([hidden]) ~ .tip { opacity: 0; }
+.bubble-title { font-weight: 650; color: var(--g-danger); }
+.bubble-detail { margin-top: 2px; font-size: 12px; color: var(--g-muted); word-break: break-word; }
+.bubble-actions { display: flex; gap: 6px; margin-top: 8px; }
+.chip-btn {
+  height: 26px; padding: 0 10px; border-radius: 7px;
+  font-size: 12.5px; font-weight: 600;
+  border: 1px solid var(--g-border);
+}
+.chip-btn.primary { color: #fff; border-color: transparent; background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+
 @keyframes g-spin { to { transform: rotate(360deg); } }
+@keyframes g-in { from { opacity: 0; transform: translateY(-50%) translateX(6px); } }
 @media (prefers-reduced-motion: reduce) {
   .ball, .tip { transition: none; }
   .ring { animation-duration: 2.4s; }
