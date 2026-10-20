@@ -32,7 +32,7 @@ export default [
     },
   },
   {
-    files: ['src/shared/languages.js', 'src/shared/dictionary.js'],
+    files: ['src/shared/languages.js', 'src/shared/dictionary.js', 'src/shared/i18n.js'],
     languageOptions: { sourceType: 'script' },
   },
   {

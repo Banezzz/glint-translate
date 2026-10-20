@@ -1,6 +1,8 @@
 import './languages.js';
+import './i18n.js';
 
 export const LANGUAGES = globalThis.GLINT_LANGUAGES;
+const { translate } = globalThis.GLINT_I18N;
 
 export function getLanguage(code) {
   if (!code) return null;
@@ -10,11 +12,14 @@ export function getLanguage(code) {
   return LANGUAGES.find((lang) => primarySubtag(lang.code) === primary) ?? null;
 }
 
-export function languageLabel(code) {
-  if (!code || code === 'und') return '自动检测';
+// Name of a language in the interface language ('zh-CN' or 'en').
+export function languageLabel(code, locale = 'zh-CN') {
+  if (!code || code === 'und') return translate(locale, 'lang.auto');
   // Detection only reports the macro language, not the script.
-  if (code.toLowerCase() === 'zh') return '中文';
-  return getLanguage(code)?.label ?? code;
+  if (code.toLowerCase() === 'zh') return translate(locale, 'lang.zh');
+  const lang = getLanguage(code);
+  if (!lang) return code;
+  return locale === 'en' ? lang.english : lang.label;
 }
 
 export function primarySubtag(code) {
