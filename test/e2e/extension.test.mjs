@@ -36,6 +36,8 @@ before(async () => {
   });
   serviceWorker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
   extensionId = new URL(serviceWorker.url()).host;
+  // The interface otherwise follows the browser language; tests assert Chinese text.
+  await serviceWorker.evaluate(() => chrome.storage.local.set({ settings: { uiLang: 'zh-CN' } }));
 });
 
 after(async () => {
@@ -427,6 +429,7 @@ test('popup translates typed text and shows the provider status', async () => {
 test('popup shows the setup state when nothing is configured', async () => {
   const saved = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
   await serviceWorker.evaluate(() => chrome.storage.local.clear());
+  await setSettings({ uiLang: 'zh-CN' });
   const page = await context.newPage();
   await page.setViewportSize({ width: 368, height: 520 });
   await page.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);

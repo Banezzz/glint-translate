@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import '../../src/shared/i18n.js';
 import { languageLabel } from '../../src/shared/lang.js';
 
-const { LOCALES, MESSAGES, resolveLocale, translate } = globalThis.GLINT_I18N;
+const { LOCALES, MESSAGES, errorText, resolveLocale, translate } = globalThis.GLINT_I18N;
 
 test('every key exists in every locale', () => {
   const [base, ...others] = LOCALES.map((locale) => Object.keys(MESSAGES[locale]).sort());
@@ -39,6 +39,14 @@ test('translate fills placeholders and falls back to Chinese, then the key', () 
     delete MESSAGES['zh-CN']['test.only'];
   }
   assert.equal(translate('en', 'missing.key'), 'missing.key');
+});
+
+test('errorText maps codes, HTTP statuses and unknown codes', () => {
+  assert.equal(errorText('zh-CN', 'http_404'), '接口地址或模型不存在');
+  assert.equal(errorText('en', 'http_503'), 'Service temporarily unavailable (HTTP 503)');
+  assert.equal(errorText('en', 'http_418'), 'Request failed (HTTP 418)');
+  assert.equal(errorText('en', 'network'), 'Cannot reach the model service. Check your network or the API endpoint');
+  assert.equal(errorText('en', 'something_new'), 'Translation failed');
 });
 
 test('language names follow the interface language', () => {

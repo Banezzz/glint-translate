@@ -1,3 +1,4 @@
+import '../shared/i18n.js';
 import { detectSourceLanguage, resolveTargets } from '../shared/lang.js';
 import { buildPagePrompt, buildSystemPrompt, clampInput, isDictionaryCandidate } from '../shared/prompt.js';
 import { MAX_BATCH_CHARS, MAX_BATCH_SEGMENTS, buildSegmentsInput, createSegmentParser } from '../shared/segments.js';
@@ -21,16 +22,21 @@ function remember(store, limit, key, value) {
   if (store.size > limit) store.delete(store.keys().next().value);
 }
 
-const NOT_CONFIGURED = { type: 'error', code: 'not_configured', message: '还没有配置模型服务', detail: '在设置页填写 API 地址、Key 并选择模型后即可使用' };
+const { errorText, resolveLocale, translate } = globalThis.GLINT_I18N;
 
-function errorPayload(err) {
-  const known = err instanceof TranslationError;
-  return {
-    type: 'error',
-    code: known ? err.code : 'unknown',
-    message: known ? err.message : '翻译失败',
-    detail: known ? err.detail : String(err?.message || err),
-  };
+function localeOf(settings) {
+  return resolveLocale(settings.uiLang, chrome.i18n.getUILanguage());
+}
+
+// Error messages are sent ready to display, in the interface language.
+function errorPayload(err, locale) {
+  const code = err instanceof TranslationError ? err.code : 'unknown';
+  const detail = err instanceof TranslationError ? err.detail : String(err?.message || err);
+  return { type: 'error', code, message: errorText(locale, code), detail };
+}
+
+function notConfigured(locale) {
+  return { type: 'error', code: 'not_configured', message: errorText(locale, 'not_configured'), detail: translate(locale, 'error.not_configured.detail') };
 }
 
 // Extension API calls reset the worker's idle timer; slow first tokens
@@ -136,13 +142,14 @@ async function runTranslation(port, message, signal) {
   };
 
   const settings = await loadSettings();
+  const locale = localeOf(settings);
   if (!isProviderReady(settings)) {
-    post(NOT_CONFIGURED);
+    post(notConfigured(locale));
     return;
   }
   const text = clampInput(message.text);
   if (!text) {
-    post({ type: 'error', code: 'empty', message: '没有可翻译的文本', detail: '' });
+    post({ type: 'error', code: 'empty', message: errorText(locale, 'empty'), detail: '' });
     return;
   }
 
@@ -174,11 +181,11 @@ async function runTranslation(port, message, signal) {
       full += delta;
       post({ type: 'delta', text: delta });
     }
-    if (!full.trim()) throw new TranslationError('empty_response', '模型没有返回内容', '');
+    if (!full.trim()) throw new TranslationError('empty_response');
     remember(cache, 100, key, full);
     post({ type: 'done', text: full, cached: false });
   } catch (err) {
-    if (!signal.aborted) post(errorPayload(err));
+    if (!signal.aborted) post(errorPayload(err, locale));
   } finally {
     release();
   }
@@ -220,8 +227,9 @@ async function runBatch(port, message, signal) {
   };
 
   const settings = await loadSettings();
+  const locale = localeOf(settings);
   if (!isProviderReady(settings)) {
-    post(NOT_CONFIGURED);
+    post(notConfigured(locale));
     return;
   }
   const segments = (Array.isArray(message.segments) ? message.segments : [])
@@ -263,7 +271,7 @@ async function runBatch(port, message, signal) {
     emit(parser.finish());
     post({ type: 'done', missing: parser.missing().map((i) => pending[i]) });
   } catch (err) {
-    if (!signal.aborted) post(errorPayload(err));
+    if (!signal.aborted) post(errorPayload(err, locale));
   } finally {
     release();
   }

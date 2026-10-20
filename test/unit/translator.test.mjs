@@ -77,12 +77,12 @@ test('hides a leading <think> block', async () => {
 
 test('turns provider stream errors into TranslationError', async () => {
   const res = streamResponse([`event: error\ndata: ${JSON.stringify({ type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } })}\n\n`]);
-  await assert.rejects(collect(res), (err) => err instanceof TranslationError && err.message === 'Overloaded');
+  await assert.rejects(collect(res), (err) => err instanceof TranslationError && err.code === 'provider' && err.detail === 'Overloaded');
 });
 
 test('maps HTTP failures to friendly messages with server detail', async () => {
   const res = new Response(JSON.stringify({ error: { message: 'The model `x` does not exist' } }), { status: 404 });
-  await assert.rejects(collect(res), (err) => err.code === 'http_404' && /模型不存在/.test(err.message) && /does not exist/.test(err.detail));
+  await assert.rejects(collect(res), (err) => err.code === 'http_404' && /does not exist/.test(err.detail));
 });
 
 test('maps network failures', async () => {
