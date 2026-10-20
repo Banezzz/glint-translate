@@ -7,6 +7,9 @@ glint-tr { all: revert; font: inherit; color: inherit; letter-spacing: inherit; 
 glint-tr[data-glint-mode="block"] { display: block !important; margin: 0.3em 0 0 !important; }
 glint-tr[data-glint-mode="inline"] { display: inline !important; margin-left: 0.4em !important; }
 glint-tr[data-glint-state="same"] { display: none !important; }
+[data-glint-src-hidden] { display: none !important; }
+/* Translation only: the translation takes the source's place. */
+glint-tr[data-glint-view="translation"][data-glint-mode] { margin: 0 !important; }
 glint-tr-text { display: inline; }
 glint-tr[data-glint-mode="block"] glint-tr-text { white-space: pre-line; }
 
@@ -20,15 +23,15 @@ glint-tr[data-glint-state="error"] glint-tr-text {
   text-decoration: underline dotted; text-underline-offset: 3px;
 }
 
-glint-tr[data-glint-state="done"][data-glint-style="dashed"] glint-tr-text {
+glint-tr[data-glint-view="bilingual"][data-glint-state="done"][data-glint-style="dashed"] glint-tr-text {
   text-decoration: underline dashed rgba(124, 108, 240, 0.65); text-decoration-thickness: 1px; text-underline-offset: 0.3em;
 }
-glint-tr[data-glint-state="done"][data-glint-style="faded"] glint-tr-text { opacity: 0.68; }
-glint-tr[data-glint-state="done"][data-glint-style="highlight"] glint-tr-text {
+glint-tr[data-glint-view="bilingual"][data-glint-state="done"][data-glint-style="faded"] glint-tr-text { opacity: 0.68; }
+glint-tr[data-glint-view="bilingual"][data-glint-state="done"][data-glint-style="highlight"] glint-tr-text {
   padding: 0 0.15em; border-radius: 0.2em;
   background: rgba(250, 204, 21, 0.28); -webkit-box-decoration-break: clone; box-decoration-break: clone;
 }
-glint-tr[data-glint-mode="block"][data-glint-state="done"][data-glint-style="border"] {
+glint-tr[data-glint-view="bilingual"][data-glint-mode="block"][data-glint-state="done"][data-glint-style="border"] {
   padding-left: 0.65em !important; border-left: 2px solid rgba(124, 108, 240, 0.7) !important;
 }
 

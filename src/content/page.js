@@ -37,10 +37,18 @@
   ].join(',');
   const INLINE_DISPLAYS = new Set(['inline', 'inline-block', 'inline-flex', 'inline-grid', 'contents', 'ruby', 'ruby-text']);
   const HEADINGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
+  // Skipped tags whose text still goes into the translation.
+  const TEXT_TAGS = new Set(['CODE', 'KBD', 'SAMP', 'VAR']);
+  const VIEWS = ['original', 'bilingual', 'translation'];
+  const HIDDEN_ATTR = 'data-glint-src-hidden';
   const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 
   let settings = { ...DEFAULTS };
+  // Translating (bilingual or translation only); false means original only.
   let active = false;
+  // The translated view to show while active. A page starts bilingual and
+  // returns to the last translated view after peeking at the original.
+  let shown = 'bilingual';
   let sheet = null;
   let port = null;
   let batchSeq = 0;
@@ -60,6 +68,10 @@
   // Source text -> translation, for the current target language.
   const translations = new Map();
   const churn = new WeakMap();
+  // Source nodes hidden in translation-only view -> their unit. Text nodes
+  // are blanked and elements get an attribute; nothing is moved, so pages
+  // that keep references to their nodes (React and friends) keep working.
+  const hiddenOwner = new WeakMap();
   const dirty = new Set();
   const cleanups = [];
 
@@ -161,7 +173,7 @@
         out += node.data.replace(/\s+/g, ' ');
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         if (node.tagName === 'BR') out += '\n';
-        else if (node.tagName === 'CODE' || node.tagName === 'KBD' || node.tagName === 'SAMP' || node.tagName === 'VAR') out += node.textContent;
+        else if (TEXT_TAGS.has(node.tagName)) out += node.textContent;
         else if (!OWN_TAGS.has(node.tagName) && !skippable(node) && displayOf(node, memo) !== 'none') node.childNodes.forEach(walk);
       }
     };
@@ -189,7 +201,8 @@
     if (next?.tagName === 'GLINT-TR') {
       if (next.glintSource === text) return null;
       // The page changed the text under an existing translation.
-      next.remove();
+      if (next.glintUnit) discard(next.glintUnit);
+      else next.remove();
       const changes = (churn.get(root) || 0) + 1;
       churn.set(root, changes);
       if (changes > MAX_CHURN) return null;
@@ -206,6 +219,8 @@
       run = [];
     };
     for (const child of root.childNodes) {
+      // Sources hidden in translation-only view are covered by their wrapper.
+      if (hiddenOwner.has(child) && (child.nodeType === Node.ELEMENT_NODE || child.data === '')) continue;
       if (child.nodeType === Node.TEXT_NODE) {
         run.push(child);
         continue;
@@ -300,6 +315,11 @@
         if (!foreign && !lost && !removedText) continue;
         dirty.add(record.target);
       } else if (record.target.parentElement) {
+        const owner = hiddenOwner.get(record.target);
+        // Our own blanking, or the page rewrote a hidden source: show it
+        // again and let the rescan translate the new text.
+        if (owner && record.target.data === '') continue;
+        if (owner) discard(owner);
         dirty.add(record.target.parentElement);
       }
     }
@@ -344,6 +364,7 @@
         'data-glint-mode': mode,
         'data-glint-state': 'loading',
         'data-glint-style': settings.pageStyle,
+        'data-glint-view': shown,
         lang: settings.targetLang,
         translate: 'no',
         onclick: (event) => {
@@ -357,6 +378,7 @@
       h('glint-tr-text'),
     );
     wrapper.glintSource = unit.text;
+    wrapper.glintUnit = unit;
     last.after(wrapper);
     unit.wrapper = wrapper;
   }
@@ -387,6 +409,45 @@
     wrapper.firstChild.textContent = translated;
     wrapper.title = '';
     wrapper.dataset.glintState = 'done';
+    if (shown === 'translation') hideSource(unit);
+  }
+
+  // Translation-only view: hide the source of a translated unit in place.
+  function hideSource(unit) {
+    if (unit.saved || unit.wrapper?.dataset.glintState !== 'done') return;
+    unit.saved = [];
+    for (const node of unit.nodes) {
+      if (!node.isConnected) continue;
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (!node.data.trim()) continue;
+        unit.saved.push([node, node.data]);
+        hiddenOwner.set(node, unit);
+        node.data = '';
+      } else if ((!skippable(node) || TEXT_TAGS.has(node.tagName)) && !node.hasAttribute(HIDDEN_ATTR)) {
+        // Buttons, images and icons did not go into the translation and stay.
+        unit.saved.push([node, null]);
+        hiddenOwner.set(node, unit);
+        node.setAttribute(HIDDEN_ATTR, '');
+      }
+    }
+  }
+
+  function showSource(unit) {
+    if (!unit?.saved) return;
+    for (const [node, data] of unit.saved) {
+      hiddenOwner.delete(node);
+      if (data === null) node.removeAttribute(HIDDEN_ATTR);
+      // Leave text the page has rewritten in the meantime.
+      else if (node.data === '') node.data = data;
+    }
+    unit.saved = null;
+  }
+
+  // Drops a unit whose source changed under it; the rescan starts over.
+  function discard(unit) {
+    showSource(unit);
+    unit.wrapper?.remove();
+    unit.wrapper = null;
   }
 
   function fail(unit, error) {
@@ -412,6 +473,14 @@
 
   function applyPageStyle() {
     for (const wrapper of document.querySelectorAll('glint-tr')) wrapper.dataset.glintStyle = settings.pageStyle;
+  }
+
+  function applyView() {
+    for (const wrapper of document.querySelectorAll('glint-tr')) {
+      wrapper.dataset.glintView = shown;
+      if (shown === 'translation') hideSource(wrapper.glintUnit);
+      else showSource(wrapper.glintUnit);
+    }
   }
 
   // ------------------------------------------------------------ messaging
@@ -570,18 +639,41 @@
     pendingByRoot.clear();
     rootsByTarget.clear();
     dirty.clear();
-    for (const wrapper of document.querySelectorAll('glint-tr')) wrapper.remove();
+    for (const wrapper of document.querySelectorAll('glint-tr')) {
+      showSource(wrapper.glintUnit);
+      wrapper.remove();
+    }
     hideBubble();
     renderBall();
   }
 
+  // Original <-> the last translated view.
   function toggle() {
     if (active) stop();
     else start();
   }
 
+  // Switching between translated views reuses what is on the page; going
+  // back from the original re-inserts translations from the cache.
+  function setView(next) {
+    if (!VIEWS.includes(next)) return;
+    if (next === 'original') {
+      stop();
+      return;
+    }
+    const changed = next !== shown;
+    shown = next;
+    if (!active) start();
+    else if (changed) applyView();
+    renderBall();
+  }
+
+  function currentView() {
+    return active ? shown : 'original';
+  }
+
   function status() {
-    return { active, busy: active && (inFlight.size > 0 || queue.length > 0) };
+    return { active, view: currentView(), busy: active && (inFlight.size > 0 || queue.length > 0) };
   }
 
   // ------------------------------------------------------------------ ball
@@ -765,8 +857,7 @@
   function onRuntimeMessage(message, _sender, sendResponse) {
     if (message?.type !== 'glint:page') return;
     if (message.action === 'toggle') toggle();
-    else if (message.action === 'start') start();
-    else if (message.action === 'stop') stop();
+    else if (message.action === 'view') setView(message.view);
     sendResponse({ ...status(), error: lastError?.message || null });
   }
 

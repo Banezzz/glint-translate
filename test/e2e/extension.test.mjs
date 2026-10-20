@@ -319,7 +319,15 @@ test('page translation also runs from the menu/shortcut message, and the ball ca
     return chrome.tabs.sendMessage(tab.id, { type: 'glint:page', action: 'toggle' }, { frameId: 0 });
   }, mock.url);
   assert.equal(response.active, true);
+  assert.equal(response.view, 'bilingual');
   await translationOf(page, 'p1').waitFor({ timeout: 8000 });
+  // The popup switches views through the same message.
+  const switched = await serviceWorker.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url: `${url}/article.html` });
+    return chrome.tabs.sendMessage(tab.id, { type: 'glint:page', action: 'view', view: 'translation' }, { frameId: 0 });
+  }, mock.url);
+  assert.equal(switched.view, 'translation');
+  assert.equal(await page.locator('#p1').evaluate((el) => el.innerText.trim()), ARTICLE_ZH[ARTICLE_PARAGRAPHS[0]]);
   await page.locator('glint-ball .dock[data-state="active"]').waitFor({ timeout: 8000 });
   await page.locator('glint-ball .ball').hover();
   await page.waitForTimeout(250);
