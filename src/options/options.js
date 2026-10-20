@@ -415,6 +415,7 @@ async function init() {
   $('fontSize').value = settings.fontSize;
   $('fontSizeValue').textContent = `${settings.fontSize} px`;
   $('floatBall').checked = settings.floatBall;
+  checkRadio('pageStyle', settings.pageStyle);
   renderBallHint();
   $('tryKbd').textContent = isMac ? '⌘ ↵' : 'Ctrl ↵';
   renderShortcuts();
@@ -461,6 +462,9 @@ async function init() {
   $('editShortcut').addEventListener('click', () => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }));
   $('editPageShortcut').addEventListener('click', () => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }));
   $('floatBall').addEventListener('change', (e) => save({ floatBall: e.target.checked }));
+  for (const radio of document.querySelectorAll('input[name="pageStyle"]')) {
+    radio.addEventListener('change', () => save({ pageStyle: radio.value }));
+  }
 
   $('tryButton').addEventListener('click', runTry);
   $('tryInput').addEventListener('keydown', (e) => {
