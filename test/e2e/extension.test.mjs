@@ -257,8 +257,9 @@ test('whole-page translation is bilingual, lazy and reversible', async () => {
   // Navigation links are translated inline so menus keep their layout.
   const navTranslations = page.locator('nav glint-tr[data-glint-mode="inline"]');
   await assert.doesNotReject(navTranslations.nth(2).waitFor({ state: 'attached' }));
-  // Code blocks, text already in the target language and bare numbers are left alone.
-  assert.equal(await page.locator('#code glint-tr, #zh-para glint-tr, #numbers glint-tr, #hidden-p glint-tr').count(), 0);
+  // Code blocks, text already in the target language, bare numbers and
+  // identifiers are left alone.
+  assert.equal(await page.locator('#code glint-tr, #zh-para glint-tr, #numbers glint-tr, #ident glint-tr, #hidden-p glint-tr').count(), 0);
   // Below-the-fold content waits until it is scrolled to.
   assert.equal(await page.locator('#far glint-tr').count(), 0);
   await shot(page, 'page-bilingual', { clip: { x: 0, y: 0, width: 1180, height: 820 } });

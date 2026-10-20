@@ -73,6 +73,7 @@ const ARTICLE = `<!doctype html>
   <pre id="code">const answer = translate("do not touch");</pre>
   <p id="zh-para">这一段已经是中文了，不需要再翻译。</p>
   <p id="numbers">2025 · 42 · 3.14</p>
+  <p id="ident">playwright.dev</p>
   <div class="hidden" id="hidden-menu"><p id="hidden-p">Hidden menu entry that appears later</p></div>
   ${FILLER}
   <p id="far">${ARTICLE_PARAGRAPHS[2]}</p>

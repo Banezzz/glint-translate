@@ -79,7 +79,10 @@
   }
 
   function worthTranslating(text) {
-    return count(text, /\p{L}/gu) >= 2 || /\p{Script=Han}/u.test(text);
+    if (count(text, /\p{L}/gu) < 2 && !/\p{Script=Han}/u.test(text)) return false;
+    // File names, hashes, versions, domains, handles: one ASCII token with
+    // digits or punctuation in it.
+    return !(/^[\x21-\x7e]+$/.test(text) && /[\d._/@#:\\=]/.test(text));
   }
 
   // Cheap check that a paragraph is already written in the target language.
