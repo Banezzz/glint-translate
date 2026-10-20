@@ -31,18 +31,25 @@
         <button class="btn btn-primary" id="setupButton" type="button">前往设置</button>
       </section>
 
-      <button class="page-btn" id="pageButton" type="button" hidden>
-        <span class="page-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" /><path d="m22 22-5-10-5 10" /><path d="M14 18h6" />
-          </svg>
-        </span>
-        <span class="page-text">
-          <span class="page-title" id="pageTitle">翻译此网页</span>
-          <span class="page-desc" id="pageDesc">双语对照，滚动到哪里翻译到哪里</span>
-        </span>
-        <kbd id="pageKbd"></kbd>
-      </button>
+      <section class="page-card" id="pageCard" hidden>
+        <div class="page-head">
+          <span class="page-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="m5 8 6 6" /><path d="m4 14 6-6 2-3" /><path d="M2 5h12" /><path d="M7 2h1" /><path d="m22 22-5-10-5 10" /><path d="M14 18h6" />
+            </svg>
+          </span>
+          <span class="page-text">
+            <span class="page-title">网页翻译</span>
+            <span class="page-desc" id="pageDesc">滚动到哪里翻译到哪里</span>
+          </span>
+          <kbd id="pageKbd"></kbd>
+        </div>
+        <div class="seg page-views" role="radiogroup" aria-label="网页显示方式">
+          <label><input type="radio" name="pageView" value="original" /><span>原文</span></label>
+          <label><input type="radio" name="pageView" value="bilingual" /><span>双语对照</span></label>
+          <label><input type="radio" name="pageView" value="translation" /><span>仅译文</span></label>
+        </div>
+      </section>
 
       <section class="translate" id="translate" hidden>
         <textarea class="textarea" id="input" rows="4" spellcheck="false" placeholder="输入或粘贴要翻译的文本"></textarea>
