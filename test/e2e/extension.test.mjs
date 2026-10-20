@@ -445,6 +445,16 @@ test('popup translates typed text and shows the provider status', async () => {
   assert.equal(await page.textContent('#result .dict-word'), 'serendipity');
   assert.equal(await page.textContent('#result .dict-pos'), 'n.');
   await shot(page, 'popup-dictionary', { fullPage: true });
+
+  // Switching the interface language re-renders the open popup.
+  await setSettings({ uiLang: 'en' });
+  await page.locator('#translateButton span', { hasText: 'Translate' }).waitFor({ timeout: 3000 });
+  assert.equal(await page.textContent('#statusText'), 'gpt-4o-mini · OpenAI-compatible');
+  assert.equal(await page.textContent('#resultMeta'), 'English → Simplified Chinese');
+  assert.equal(await page.locator('#targetLang option:checked').textContent(), 'Simplified Chinese');
+  assert.equal(await page.getAttribute('#input', 'placeholder'), 'Type or paste text to translate');
+  await shot(page, 'popup-en', { fullPage: true });
+  await setSettings({ uiLang: 'zh-CN' });
   await page.close();
 });
 

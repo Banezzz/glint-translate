@@ -1,16 +1,20 @@
 import { LANGUAGES, languageLabel } from '../shared/lang.js';
 import { effectiveProvider, isProviderReady, loadSettings, updateSettings } from '../shared/settings.js';
 import { applyTheme, renderResult, translateStream } from '../ui/common.js';
-import { protocolLabel, setLocale } from '../ui/i18n.js';
+import { applyI18n, getLocale, protocolLabel, setLocale, t } from '../ui/i18n.js';
 
 const $ = (id) => document.getElementById(id);
-const TRIGGER_DESC = { icon: '选中文本后显示翻译图标', auto: '选中文本后直接翻译', manual: '仅快捷键与右键菜单' };
 
 let settings;
 let hostname = '';
 let cancel = null;
 let lastResult = '';
+let lastMeta = null;
 let tab = null;
+// Last state reported by the page, so a language switch can re-render it.
+let pageState;
+
+const label = (code) => languageLabel(code, getLocale());
 
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -35,7 +39,7 @@ function renderStatus() {
   const ready = isProviderReady(settings);
   $('statusDot').className = `dot ${ready ? 'ok' : 'warn'}`;
   if (!ready) {
-    $('statusText').textContent = '尚未配置模型服务';
+    $('statusText').textContent = t('popup.notConfigured');
     return;
   }
   const provider = effectiveProvider(settings.provider);
@@ -45,7 +49,7 @@ function renderStatus() {
 
 function renderToggles() {
   $('enabled').checked = settings.enabled;
-  $('triggerDesc').textContent = settings.enabled ? TRIGGER_DESC[settings.trigger] : '已关闭，仍可用快捷键与右键菜单';
+  $('triggerDesc').textContent = t(settings.enabled ? `popup.trigger.${settings.trigger}` : 'popup.trigger.off');
   $('siteRow').hidden = !hostname;
   $('siteHost').textContent = hostname;
   $('siteEnabled').checked = !settings.disabledSites.includes(hostname);
@@ -72,6 +76,7 @@ async function pageMessage(action, extra = {}) {
 }
 
 function renderPageCard(state) {
+  pageState = state;
   $('pageCard').hidden = false;
   $('pageCard').classList.toggle('unsupported', !state);
   for (const radio of document.querySelectorAll('input[name="pageView"]')) {
@@ -79,10 +84,30 @@ function renderPageCard(state) {
     radio.disabled = !state;
   }
   $('pageDesc').textContent = !state
-    ? '此页面不支持（浏览器内置页面和应用商店）'
-    : state.view === 'original'
-      ? `选择双语对照或仅译文，译为${languageLabel(settings.targetLang)}`
-      : `已开启 · 译为${languageLabel(settings.targetLang)}，滚动到哪里翻译到哪里`;
+    ? t('popup.page.unsupported')
+    : t(state.view === 'original' ? 'popup.page.idle' : 'popup.page.active', { lang: label(settings.targetLang) });
+}
+
+function renderMeta() {
+  $('resultMeta').textContent = lastMeta ? `${label(lastMeta.sourceLang)} → ${label(lastMeta.targetLang)}` : '';
+}
+
+function fillTargetSelect() {
+  const select = $('targetLang');
+  const value = select.value || settings.targetLang;
+  select.replaceChildren(...LANGUAGES.map((lang) => Object.assign(document.createElement('option'), { value: lang.code, textContent: label(lang.code) })));
+  select.value = value;
+}
+
+// Re-renders everything that carries text, in place.
+function applyLocale(preference) {
+  setLocale(preference);
+  applyI18n();
+  renderStatus();
+  renderToggles();
+  fillTargetSelect();
+  if (pageState !== undefined) renderPageCard(pageState);
+  if (lastMeta) renderMeta();
 }
 
 async function initPageCard() {
@@ -111,14 +136,16 @@ function translate() {
   $('resultWrap').hidden = false;
   result.className = 'translation';
   renderResult(result, { mode, text: '', source: text, streaming: true });
-  $('resultMeta').textContent = '翻译中…';
+  lastMeta = null;
+  $('resultMeta').textContent = t('translating');
   $('copy').hidden = true;
   cancel = translateStream(
     { text, targetLang: $('targetLang').value },
     {
       onMeta: (meta) => {
         mode = meta.mode;
-        $('resultMeta').textContent = `${languageLabel(meta.sourceLang)} → ${languageLabel(meta.targetLang)}`;
+        lastMeta = meta;
+        renderMeta();
       },
       onDelta: (delta) => {
         lastResult += delta;
@@ -149,6 +176,7 @@ function translate() {
 async function init() {
   settings = await loadSettings();
   setLocale(settings.uiLang);
+  applyI18n();
   applyTheme(settings.theme);
   tab = await activeTab();
   try {
@@ -166,10 +194,8 @@ async function init() {
   if (ready) initPageCard();
 
   const select = $('targetLang');
-  select.replaceChildren(
-    ...LANGUAGES.map((lang) => Object.assign(document.createElement('option'), { value: lang.code, textContent: lang.label })),
-  );
-  select.value = settings.targetLang;
+  select.value = '';
+  fillTargetSelect();
   $('kbd').textContent = /Mac/i.test(navigator.platform) ? '⌘ ↵' : 'Ctrl ↵';
 
   const openOptions = () => {
@@ -212,6 +238,14 @@ async function init() {
     // Turning it on for a site also brings back a globally hidden ball.
     settings = await updateSettings({ ballDisabledSites: [...sites], ...(e.target.checked ? { floatBall: true } : {}) });
     renderToggles();
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    const next = changes.settings?.newValue;
+    if (area !== 'local' || !next) return;
+    const previous = settings;
+    settings = { ...settings, ...next };
+    if (next.uiLang !== previous.uiLang) applyLocale(next.uiLang);
   });
 
   if (ready) {
