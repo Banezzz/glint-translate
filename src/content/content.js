@@ -1,5 +1,5 @@
 // Selection trigger and translation card. Runs as a classic content script
-// after languages.js, card-styles.js and icons.js (shared isolated world).
+// after languages.js, card-styles.js, icons.js and dom.js (shared isolated world).
 (() => {
   if (!(document.documentElement instanceof HTMLElement)) return;
 
@@ -10,7 +10,7 @@
   const MAX_TEXT = 6000;
   const DEFAULTS = { enabled: true, targetLang: 'zh-CN', trigger: 'icon', theme: 'auto', fontSize: 15, disabledSites: [] };
   const SETTINGS_ERRORS = new Set(['not_configured', 'auth', 'network', 'http_400', 'http_401', 'http_403', 'http_404']);
-  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const { h, icon, alive } = GLINT_DOM;
   const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 
   let settings = { ...DEFAULTS };
@@ -40,50 +40,6 @@
   function listen(target, type, handler, options) {
     target.addEventListener(type, handler, options);
     cleanups.push(() => target.removeEventListener(type, handler, options));
-  }
-
-  function alive() {
-    try {
-      return Boolean(chrome.runtime?.id);
-    } catch {
-      return false;
-    }
-  }
-
-  function h(tag, attrs = {}, ...children) {
-    const el = document.createElement(tag);
-    for (const [key, value] of Object.entries(attrs)) {
-      if (value === false || value === null || value === undefined) continue;
-      if (key === 'class') el.className = value;
-      else if (key.startsWith('on')) el.addEventListener(key.slice(2), value);
-      else el.setAttribute(key, value === true ? '' : value);
-    }
-    for (const child of children.flat()) {
-      if (child !== null && child !== undefined && child !== false) el.append(child);
-    }
-    return el;
-  }
-
-  function icon(name) {
-    const def = GLINT_ICONS[name];
-    const svg = document.createElementNS(SVG_NS, 'svg');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('aria-hidden', 'true');
-    if (def.fill) {
-      svg.setAttribute('fill', 'currentColor');
-    } else {
-      svg.setAttribute('fill', 'none');
-      svg.setAttribute('stroke', 'currentColor');
-      svg.setAttribute('stroke-width', '1.8');
-      svg.setAttribute('stroke-linecap', 'round');
-      svg.setAttribute('stroke-linejoin', 'round');
-    }
-    for (const d of def.paths) {
-      const path = document.createElementNS(SVG_NS, 'path');
-      path.setAttribute('d', d);
-      svg.append(path);
-    }
-    return svg;
   }
 
   function iconButton(name, title, onclick) {
