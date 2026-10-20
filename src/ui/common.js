@@ -1,5 +1,6 @@
 // Helpers shared by extension pages (options, popup).
 import '../shared/dictionary.js';
+import { t } from './i18n.js';
 
 const parseDictionary = globalThis.GLINT_PARSE_DICTIONARY;
 
@@ -38,7 +39,7 @@ export function translateStream({ text, targetLang, fresh = false }, { onMeta, o
   port.onDisconnect.addListener(() => {
     if (finished) return;
     finished = true;
-    onError?.({ code: 'disconnected', message: '与后台的连接已断开，请重试', detail: '' });
+    onError?.({ code: 'disconnected', message: t('error.disconnected'), detail: t('error.disconnected.detail') });
   });
   port.postMessage({ type: 'translate', id, text, targetLang, fresh });
   return () => {
@@ -90,10 +91,10 @@ export function debounce(fn, ms) {
 export function relativeTime(timestamp) {
   if (!timestamp) return '';
   const seconds = Math.round((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return '刚刚';
+  if (seconds < 60) return t('time.justNow');
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} 分钟前`;
+  if (minutes < 60) return t('time.minutes', { count: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} 小时前`;
-  return `${Math.round(hours / 24)} 天前`;
+  if (hours < 24) return t('time.hours', { count: hours });
+  return t('time.days', { count: Math.round(hours / 24) });
 }

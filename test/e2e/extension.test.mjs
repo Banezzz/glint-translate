@@ -127,6 +127,28 @@ test('options page switches to an OpenAI endpoint pasted as a full URL', async (
   await page.close();
 });
 
+test('the settings page switches its interface language live', async () => {
+  const page = await openOptions();
+  await page.locator('#connection[data-state="ok"]').waitFor({ timeout: 8000 });
+  assert.equal(await page.textContent('h1'), 'Glint 划词翻译');
+  await page.locator('input[name="uiLang"][value="en"]').check({ force: true });
+  assert.equal(await page.textContent('h1'), 'Glint Translate');
+  assert.equal(await page.getAttribute('html', 'lang'), 'en');
+  assert.equal(await page.textContent('#sec-provider'), 'Model service');
+  assert.match(await page.textContent('#connTitle'), /^Connected · OpenAI-compatible · 2 models$/);
+  assert.equal(await page.locator('#targetLang option:checked').textContent(), 'Simplified Chinese');
+  assert.equal(await page.getAttribute('#model', 'placeholder'), 'Pick from the list after detection, or type a model name');
+  await page.locator('.panel').first().screenshot({ path: join(ARTIFACTS, 'options-provider-en.png'), animations: 'disabled' });
+  const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
+  assert.equal(stored.settings.uiLang, 'en');
+
+  // Another page switching back is picked up here too.
+  await setSettings({ uiLang: 'zh-CN' });
+  await page.locator('h1', { hasText: 'Glint 划词翻译' }).waitFor({ timeout: 3000 });
+  assert.equal(await page.locator('input[name="uiLang"][value="zh-CN"]').isChecked(), true);
+  await page.close();
+});
+
 test('selecting a paragraph shows the trigger and streams a translation card', async () => {
   await setSettings({ trigger: 'icon', theme: 'light' });
   const page = await context.newPage();

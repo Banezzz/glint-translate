@@ -2,7 +2,7 @@ import { LANGUAGES, languageLabel } from '../shared/lang.js';
 import { chooseModel, detectEndpoint, normalizeBaseUrl } from '../shared/providers.js';
 import { loadSettings, updateSettings } from '../shared/settings.js';
 import { applyTheme, debounce, relativeTime, renderResult, translateStream } from '../ui/common.js';
-import { protocolLabel, setLocale, t } from '../ui/i18n.js';
+import { applyI18n, getLocale, protocolLabel, setLocale, t } from '../ui/i18n.js';
 
 const PRESETS = [
   { name: 'OpenAI', url: 'https://api.openai.com/v1' },
@@ -10,7 +10,7 @@ const PRESETS = [
   { name: 'DeepSeek', url: 'https://api.deepseek.com/v1' },
   { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
   { name: 'Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai' },
-  { name: '硅基流动', url: 'https://api.siliconflow.cn/v1' },
+  { name: 'SiliconFlow', key: 'preset.siliconflow', url: 'https://api.siliconflow.cn/v1' },
   { name: 'Ollama', url: 'http://localhost:11434/v1' },
 ];
 
@@ -37,7 +37,7 @@ function toast(message) {
 function save(patch, { quiet = false } = {}) {
   saveQueue = saveQueue.then(async () => {
     settings = await updateSettings(patch);
-    if (!quiet) toast('已保存');
+    if (!quiet) toast(t('toast.saved'));
   });
   return saveQueue;
 }
@@ -68,7 +68,7 @@ function renderPresets() {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'preset';
-      button.textContent = preset.name;
+      button.textContent = preset.key ? t(preset.key) : preset.name;
       button.title = preset.url;
       button.setAttribute('aria-pressed', String(normalizeBaseUrl(preset.url) === normalized));
       button.addEventListener('click', () => {
@@ -101,18 +101,18 @@ function renderConnectionFromSettings() {
   const { provider } = settings;
   const normalized = normalizeBaseUrl(provider.baseUrl);
   if (!normalized) {
-    setConnection('idle', { title: provider.baseUrl ? '地址格式不正确' : '填写 API 地址后自动检测' });
+    setConnection('idle', { title: t(provider.baseUrl ? 'conn.badUrl' : 'conn.idle') });
     return;
   }
   const resolved = provider.resolved?.from === normalized ? provider.resolved : null;
   if (!resolved) {
-    setConnection('idle', { title: '尚未检测', sub: normalized });
+    setConnection('idle', { title: t('conn.unchecked'), sub: normalized });
     return;
   }
   const type = provider.type === 'auto' ? resolved.type : provider.type;
   const count = provider.models.length;
-  const title = `已连接 · ${protocolLabel(type)}${count ? ` · ${count} 个模型` : ''}`;
-  const details = [resolved.baseUrl, resolved.latencyMs ? `${resolved.latencyMs} ms` : '', resolved.checkedAt ? `${relativeTime(resolved.checkedAt)}检测` : '']
+  const title = [t('conn.connected', { protocol: protocolLabel(type) }), count ? t('model.count', { count }) : ''].filter(Boolean).join(' · ');
+  const details = [resolved.baseUrl, resolved.latencyMs ? `${resolved.latencyMs} ms` : '', resolved.checkedAt ? t('conn.checkedAt', { time: relativeTime(resolved.checkedAt) }) : '']
     .filter(Boolean)
     .join(' · ');
   setConnection(resolved.warning ? 'warn' : 'ok', { title, sub: resolved.warning ? warningText(resolved.warning) : details });
@@ -139,10 +139,10 @@ function queueDetect() {
   const normalized = normalizeBaseUrl($('baseUrl').value);
   if (!normalized) {
     scheduleDetect.cancel();
-    setConnection('idle', { title: $('baseUrl').value.trim() ? '地址格式不正确' : '填写 API 地址后自动检测' });
+    setConnection('idle', { title: t($('baseUrl').value.trim() ? 'conn.badUrl' : 'conn.idle') });
     return;
   }
-  setConnection('checking', { title: '正在检测接口与模型…', sub: normalized });
+  setConnection('checking', { title: t('conn.checking'), sub: normalized });
   scheduleDetect();
 }
 
@@ -157,7 +157,7 @@ async function runDetect() {
   detectController?.abort();
   detectController = new AbortController();
   const seq = ++detectSeq;
-  setConnection('checking', { title: '正在检测接口与模型…', sub: normalizeBaseUrl(baseUrl) });
+  setConnection('checking', { title: t('conn.checking'), sub: normalizeBaseUrl(baseUrl) });
 
   let result;
   try {
@@ -197,7 +197,7 @@ async function runDetect() {
   $('model').value = model;
   renderModelCount();
   renderConnectionFromSettings();
-  toast(result.models.length ? `检测成功，已获取 ${result.models.length} 个模型` : '检测成功');
+  toast(result.models.length ? t('toast.detectedModels', { count: result.models.length }) : t('toast.detected'));
 }
 
 // ------------------------------------------------------------ model combo
@@ -208,7 +208,7 @@ let comboItems = [];
 function renderModelCount() {
   const count = settings.provider.models.length;
   $('modelCount').hidden = !count;
-  $('modelCount').textContent = `${count} 个模型`;
+  $('modelCount').textContent = t('model.count', { count });
 }
 
 function highlight(text, query) {
@@ -254,7 +254,7 @@ function openCombo({ filter = true } = {}) {
           li.addEventListener('click', () => pickModel(model.id));
           return li;
         })
-      : [Object.assign(document.createElement('li'), { className: 'combo-empty', textContent: '没有匹配的模型，将直接使用你输入的名称' })]),
+      : [Object.assign(document.createElement('li'), { className: 'combo-empty', textContent: t('model.noMatch') })]),
   );
   list.hidden = false;
   $('model').setAttribute('aria-expanded', 'true');
@@ -319,7 +319,7 @@ function fillLanguageSelect(select, value) {
     ...LANGUAGES.map((lang) => {
       const option = document.createElement('option');
       option.value = lang.code;
-      option.textContent = lang.label;
+      option.textContent = languageLabel(lang.code, getLocale());
       return option;
     }),
   );
@@ -332,7 +332,7 @@ async function renderShortcuts() {
     const shortcut = commands.find((c) => c.name === name)?.shortcut || '';
     const el = $(id);
     if (!shortcut) {
-      el.textContent = '未设置';
+      el.textContent = t('shortcut.none');
       continue;
     }
     const keys = shortcut.includes('+') ? shortcut.split('+') : [...shortcut];
@@ -342,9 +342,7 @@ async function renderShortcuts() {
 
 function renderBallHint() {
   const hidden = settings.ballDisabledSites.length;
-  $('ballHint').textContent = hidden
-    ? `在网页右侧显示，点击即翻译整页 · 已在 ${hidden} 个网站隐藏（可在弹出面板中恢复）`
-    : '在网页右侧显示，点击即翻译整页，可上下拖动';
+  $('ballHint').textContent = hidden ? t('page.ball.hintHidden', { count: hidden }) : t('page.ball.hint');
 }
 
 function checkRadio(name, value) {
@@ -367,7 +365,7 @@ async function runTry() {
   $('tryOutputWrap').hidden = false;
   output.className = 'translation';
   renderResult(output, { mode, text: '', source: text, streaming: true });
-  $('tryMeta').textContent = '翻译中…';
+  $('tryMeta').textContent = t('translating');
   $('tryButton').disabled = true;
   const finish = () => {
     $('tryButton').disabled = false;
@@ -378,7 +376,7 @@ async function runTry() {
     {
       onMeta: (meta) => {
         mode = meta.mode;
-        $('tryMeta').textContent = `${languageLabel(meta.sourceLang)} → ${languageLabel(meta.targetLang)} · ${meta.model}`;
+        $('tryMeta').textContent = `${languageLabel(meta.sourceLang, getLocale())} → ${languageLabel(meta.targetLang, getLocale())} · ${meta.model}`;
       },
       onDelta: (delta) => {
         raw += delta;
@@ -404,12 +402,28 @@ async function runTry() {
   );
 }
 
+// ---------------------------------------------------------------- language
+
+// Re-renders everything that carries text, in place.
+function applyLocale(preference) {
+  setLocale(preference);
+  applyI18n();
+  renderPresets();
+  renderModelCount();
+  renderConnectionFromSettings();
+  renderBallHint();
+  renderShortcuts();
+  fillLanguageSelect($('targetLang'), $('targetLang').value);
+  fillLanguageSelect($('secondLang'), $('secondLang').value);
+}
+
 // -------------------------------------------------------------------- init
 
 async function init() {
   settings = await loadSettings();
   const { provider } = settings;
   setLocale(settings.uiLang);
+  applyI18n();
   applyTheme(settings.theme);
   $('version').textContent = `v${chrome.runtime.getManifest().version}`;
 
@@ -427,6 +441,7 @@ async function init() {
   $('enabled').checked = settings.enabled;
   checkRadio('trigger', settings.trigger);
   checkRadio('theme', settings.theme);
+  checkRadio('uiLang', settings.uiLang);
   $('fontSize').value = settings.fontSize;
   $('fontSizeValue').textContent = `${settings.fontSize} px`;
   $('floatBall').checked = settings.floatBall;
@@ -464,6 +479,12 @@ async function init() {
   for (const radio of document.querySelectorAll('input[name="trigger"]')) {
     radio.addEventListener('change', () => save({ trigger: radio.value }));
   }
+  for (const radio of document.querySelectorAll('input[name="uiLang"]')) {
+    radio.addEventListener('change', () => {
+      save({ uiLang: radio.value }, { quiet: true });
+      applyLocale(radio.value);
+    });
+  }
   for (const radio of document.querySelectorAll('input[name="theme"]')) {
     radio.addEventListener('change', () => {
       applyTheme(radio.value);
@@ -496,6 +517,10 @@ async function init() {
     if (next.enabled !== $('enabled').checked) $('enabled').checked = next.enabled;
     if (next.targetLang !== $('targetLang').value) $('targetLang').value = next.targetLang;
     if (next.floatBall !== undefined && next.floatBall !== $('floatBall').checked) $('floatBall').checked = next.floatBall;
+    if (next.uiLang && next.uiLang !== document.querySelector('input[name="uiLang"]:checked')?.value) {
+      checkRadio('uiLang', next.uiLang);
+      applyLocale(next.uiLang);
+    }
   });
 
   // Re-check a configured endpoint whose detection is missing or stale.
