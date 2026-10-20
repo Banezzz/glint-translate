@@ -6,7 +6,8 @@ glint-tr { all: revert; font: inherit; color: inherit; letter-spacing: inherit; 
 glint-tr[data-glint-mode="block"] { display: block !important; margin: 0.3em 0 0 !important; }
 glint-tr[data-glint-mode="inline"] { display: inline !important; margin-left: 0.4em !important; }
 glint-tr[data-glint-state="same"] { display: none !important; }
-glint-tr-text { display: inline; white-space: pre-line; }
+glint-tr-text { display: inline; }
+glint-tr[data-glint-mode="block"] glint-tr-text { white-space: pre-line; }
 
 glint-tr[data-glint-state="loading"] glint-tr-text {
   display: inline-block; width: 0.85em; height: 0.85em; vertical-align: -0.1em;

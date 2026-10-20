@@ -330,7 +330,10 @@
   function insertWrapper(unit) {
     const last = unit.nodes.at(-1);
     const short = unit.text.length <= 24 && !unit.text.includes('\n');
-    const mode = short && !HEADINGS.has(unit.root.tagName) ? 'inline' : 'block';
+    // Single-line UI (truncated cells, tabs) keeps its height: the
+    // translation follows on the same line and is clipped with it.
+    const singleLine = /nowrap|pre$/.test(getComputedStyle(unit.root).whiteSpace);
+    const mode = (short && !HEADINGS.has(unit.root.tagName)) || singleLine ? 'inline' : 'block';
     const wrapper = h(
       'glint-tr',
       {
