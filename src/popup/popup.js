@@ -50,6 +50,8 @@ function renderToggles() {
   $('siteHost').textContent = hostname;
   $('siteEnabled').checked = !settings.disabledSites.includes(hostname);
   $('siteEnabled').disabled = !settings.enabled;
+  $('ballRow').hidden = !hostname;
+  $('ballEnabled').checked = settings.floatBall && !settings.ballDisabledSites.includes(hostname);
 }
 
 // Talks to the page-translation script in the tab's top frame, injecting
@@ -201,6 +203,14 @@ async function init() {
     if (e.target.checked) sites.delete(hostname);
     else sites.add(hostname);
     settings = await updateSettings({ disabledSites: [...sites] });
+    renderToggles();
+  });
+  $('ballEnabled').addEventListener('change', async (e) => {
+    const sites = new Set(settings.ballDisabledSites);
+    if (e.target.checked) sites.delete(hostname);
+    else sites.add(hostname);
+    // Turning it on for a site also brings back a globally hidden ball.
+    settings = await updateSettings({ ballDisabledSites: [...sites], ...(e.target.checked ? { floatBall: true } : {}) });
     renderToggles();
   });
 
