@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
-import { ANTHROPIC_KEY, OPENAI_KEY, PARAGRAPH, PARAGRAPH_ZH, startMockServer } from './mock-server.mjs';
+import { ANTHROPIC_KEY, ARTICLE_PARAGRAPHS, ARTICLE_ZH, OPENAI_KEY, PARAGRAPH, PARAGRAPH_ZH, startMockServer } from './mock-server.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ARTIFACTS = join(ROOT, '.e2e-artifacts');
@@ -225,6 +225,82 @@ test('context menu style requests open the card via the background worker', asyn
   }, mock.url);
   await page.locator('glint-translate .output:not(.streaming)', { hasText: '今天的天气' }).waitFor({ timeout: 8000 });
   await page.close();
+});
+
+// Toggles page translation the way the context menu and the shortcut do.
+async function togglePage(page) {
+  await page.bringToFront();
+  return serviceWorker.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url: `${url}/article.html` });
+    return chrome.tabs.sendMessage(tab.id, { type: 'glint:page', action: 'toggle' }, { frameId: 0 });
+  }, mock.url);
+}
+
+const translationOf = (page, id) => page.locator(`#${id} > glint-tr[data-glint-state="done"]`);
+
+test('whole-page translation is bilingual, lazy and reversible', async () => {
+  await setSettings({ pageStyle: 'dashed' });
+  const page = await context.newPage();
+  await page.goto(`${mock.url}/article.html`);
+  const before = mock.requests.length;
+  assert.equal((await togglePage(page)).active, true);
+
+  // Visible paragraphs get their translation inserted right below them.
+  await translationOf(page, 'p1').waitFor({ timeout: 8000 });
+  assert.equal(await translationOf(page, 'p1').textContent(), ARTICLE_ZH[ARTICLE_PARAGRAPHS[0]]);
+  // Inline markup is flattened into one sentence for the model.
+  assert.equal(await translationOf(page, 'p2').textContent(), ARTICLE_ZH[ARTICLE_PARAGRAPHS[1]]);
+  assert.equal(await translationOf(page, 'title').getAttribute('data-glint-mode'), 'block');
+  // Inline code stays part of the sentence; short list items go inline.
+  assert.equal(await translationOf(page, 'li1').textContent(), ARTICLE_ZH['Keep the source text visible']);
+  assert.equal(await translationOf(page, 'li2').getAttribute('data-glint-mode'), 'block');
+  // Navigation links are translated inline so menus keep their layout.
+  const navTranslations = page.locator('nav glint-tr[data-glint-mode="inline"]');
+  await assert.doesNotReject(navTranslations.nth(2).waitFor({ state: 'attached' }));
+  // Code blocks, text already in the target language and bare numbers are left alone.
+  assert.equal(await page.locator('#code glint-tr, #zh-para glint-tr, #numbers glint-tr, #hidden-p glint-tr').count(), 0);
+  // Below-the-fold content waits until it is scrolled to.
+  assert.equal(await page.locator('#far glint-tr').count(), 0);
+  await shot(page, 'page-bilingual', { clip: { x: 0, y: 0, width: 1180, height: 820 } });
+
+  // Paragraphs travel in batches, not one request each.
+  const batches = mock.requests.slice(before).filter((r) => r.path === '/openai/v1/chat/completions');
+  assert.ok(batches.length >= 1 && batches.length <= 3, `expected few batched requests, got ${batches.length}`);
+  assert.match(batches[0].body.messages[0].content, /web page into Simplified Chinese/);
+  assert.match(batches[0].body.messages[1].content, /^<seg id="1">/);
+
+  await page.locator('#far').scrollIntoViewIfNeeded();
+  await translationOf(page, 'far').waitFor({ timeout: 8000 });
+  assert.equal(await translationOf(page, 'far').textContent(), ARTICLE_ZH[ARTICLE_PARAGRAPHS[2]]);
+
+  // Content added later and menus that become visible are picked up too.
+  await page.evaluate(() => {
+    const p = document.createElement('p');
+    p.id = 'added';
+    p.textContent = 'This paragraph was loaded after the page was translated.';
+    document.querySelector('#far').after(p);
+    document.querySelector('#hidden-menu').classList.remove('hidden');
+  });
+  await translationOf(page, 'added').waitFor({ timeout: 8000 });
+  await page.locator('#hidden-p').scrollIntoViewIfNeeded();
+  await translationOf(page, 'hidden-p').waitFor({ timeout: 8000 });
+
+  // Changing the style restyles existing translations in place.
+  await setSettings({ pageStyle: 'highlight' });
+  await page.locator('#p1 > glint-tr[data-glint-style="highlight"]').waitFor({ timeout: 3000 });
+
+  // Toggling again restores the original page.
+  assert.equal((await togglePage(page)).active, false);
+  assert.equal(await page.locator('glint-tr').count(), 0);
+
+  // Translating again is served from cache without new requests.
+  await page.evaluate(() => scrollTo(0, 0));
+  const beforeAgain = mock.requests.length;
+  await togglePage(page);
+  await translationOf(page, 'p1').waitFor({ timeout: 8000 });
+  assert.equal(mock.requests.slice(beforeAgain).filter((r) => r.path === '/openai/v1/chat/completions').length, 0);
+  await page.close();
+  await setSettings({ pageStyle: 'dashed' });
 });
 
 test('popup translates typed text and shows the provider status', async () => {

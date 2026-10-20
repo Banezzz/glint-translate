@@ -33,9 +33,11 @@
         "src/shared/languages.js",
         "src/shared/dictionary.js",
         "src/content/card-styles.js",
+        "src/content/page-styles.js",
         "src/content/icons.js",
         "src/content/dom.js",
-        "src/content/content.js"
+        "src/content/content.js",
+        "src/content/page.js"
       ],
       "run_at": "document_idle",
       "all_frames": true

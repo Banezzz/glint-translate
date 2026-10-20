@@ -2,6 +2,7 @@
 //   /openai/v1/models, /openai/v1/chat/completions   (Bearer sk-openai-test)
 //   /anthropic/v1/models, /anthropic/v1/messages      (x-api-key sk-ant-test)
 //   /page.html                                        (content to select)
+//   /article.html                                     (whole-page translation)
 import { createServer } from 'node:http';
 
 export const OPENAI_KEY = 'sk-openai-test';
@@ -32,8 +33,66 @@ const PAGE = `<!doctype html>
   <div style="height: 1200px"></div>
 </body></html>`;
 
+export const ARTICLE_PARAGRAPHS = [
+  'Most of what we read online was written in a language we do not speak natively.',
+  'Bilingual reading keeps the original next to the translation, so nothing is lost.',
+  'Scroll down and the next paragraphs are translated just before they appear.',
+];
+
+export const ARTICLE_ZH = {
+  'Reading in two languages': '用两种语言阅读',
+  Home: '首页',
+  Articles: '文章',
+  'About us': '关于我们',
+  [ARTICLE_PARAGRAPHS[0]]: '我们在网上读到的大部分内容，都不是用母语写成的。',
+  [ARTICLE_PARAGRAPHS[1]]: '双语阅读让原文和译文并排出现，不会遗漏任何信息。',
+  [ARTICLE_PARAGRAPHS[2]]: '向下滚动时，接下来的段落会在出现之前就翻译好。',
+  'Keep the source text visible': '让 source 原文始终可见',
+  'Translate only what you read': '只翻译你正在读的内容',
+};
+
+// Long enough that the last section starts below the fold.
+const FILLER = Array.from({ length: 40 }, (_, i) => `<p class="filler">Filler paragraph number ${i + 1} keeps the page tall enough to scroll.</p>`).join('\n  ');
+
+const ARTICLE = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Reading in two languages</title>
+<style>
+  body { font: 17px/1.7 Georgia, serif; max-width: 680px; margin: 40px auto; padding: 0 24px; color: #222; }
+  nav { display: flex; gap: 18px; font: 14px -apple-system, sans-serif; }
+  nav a { color: #2563eb; text-decoration: none; }
+  h1 { font: 700 30px/1.25 -apple-system, sans-serif; }
+  pre { background: #f4f4f5; padding: 12px; }
+  .hidden { display: none; }
+</style></head>
+<body>
+  <nav><a href="#">Home</a><a href="#">Articles</a><a href="#">About us</a></nav>
+  <h1 id="title">Reading in two languages</h1>
+  <p id="p1">${ARTICLE_PARAGRAPHS[0]}</p>
+  <p id="p2">${ARTICLE_PARAGRAPHS[1].replace('original', '<em>original</em>')}</p>
+  <ul><li id="li1">Keep the <code>source</code> text visible</li><li id="li2">Translate only what you read</li></ul>
+  <pre id="code">const answer = translate("do not touch");</pre>
+  <p id="zh-para">这一段已经是中文了，不需要再翻译。</p>
+  <p id="numbers">2025 · 42 · 3.14</p>
+  <div class="hidden" id="hidden-menu"><p id="hidden-p">Hidden menu entry that appears later</p></div>
+  ${FILLER}
+  <p id="far">${ARTICLE_PARAGRAPHS[2]}</p>
+</body></html>`;
+
+// Whole-page batches come as <seg id="N">…</seg> lines.
+function translateSegments(text) {
+  const segments = [...text.matchAll(/<seg id="(\d+)">([\s\S]*?)<\/seg>/g)];
+  return segments
+    .map(([, id, body]) => {
+      const filler = /^Filler paragraph number (\d+)/.exec(body);
+      const translated = ARTICLE_ZH[body] ?? (filler ? `第 ${filler[1]} 段占位文字，让页面足够长、可以滚动。` : `【译】${body}`);
+      return `<seg id="${id}">${translated}</seg>`;
+    })
+    .join('\n');
+}
+
 function cannedTranslation(text, system) {
   if (/dictionary/i.test(system)) return DICTIONARY_ENTRY;
+  if (/<seg id="N">/.test(system)) return translateSegments(text);
   if (text === PARAGRAPH) return PARAGRAPH_ZH;
   if (/into English/.test(system.split('\n')[0])) return `[en] ${text}`;
   return `【译】${text}`;
@@ -77,9 +136,9 @@ export async function startMockServer({ delayMs = 12, port: listenPort = 0 } = {
     const body = req.method === 'POST' ? await readBody(req) : null;
     requests.push({ method: req.method, path: url.pathname, headers: req.headers, body });
 
-    if (url.pathname === '/page.html') {
+    if (url.pathname === '/page.html' || url.pathname === '/article.html') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-      res.end(PAGE);
+      res.end(url.pathname === '/page.html' ? PAGE : ARTICLE);
       return;
     }
 

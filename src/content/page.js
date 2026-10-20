@@ -1,0 +1,624 @@
+// Whole-page bilingual translation. Runs as a classic content script after
+// page-styles.js and dom.js; only the top frame translates its page.
+//
+// The page is split into paragraph units: runs of inline content inside a
+// block element. Units are translated lazily as they scroll into view, in
+// batches, and each translation is inserted right after its source as a
+// <glint-tr> element, so the original layout and styles carry over.
+(() => {
+  if (window.top !== window || !(document.documentElement instanceof HTMLElement)) return;
+
+  // Replace a stale copy of this script (e.g. after the extension updated).
+  document.dispatchEvent(new CustomEvent('glint:page-teardown'));
+
+  const { h, alive } = GLINT_DOM;
+  const PORT_NAME = 'glint:page';
+  const DEFAULTS = { targetLang: 'zh-CN', pageStyle: 'dashed' };
+  const SETTINGS_ERRORS = new Set(['not_configured', 'auth', 'network', 'http_400', 'http_401', 'http_403', 'http_404']);
+  const BATCH_SEGMENTS = 10;
+  const BATCH_CHARS = 2000;
+  const MAX_UNIT_CHARS = 5000;
+  const MAX_IN_FLIGHT = 3;
+  // Units whose text keeps changing (clocks, counters) stop being re-translated.
+  const MAX_CHURN = 4;
+
+  const OWN_TAGS = new Set(['GLINT-TR', 'GLINT-TRANSLATE']);
+  const SKIP_TAGS = new Set([
+    'SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'TITLE', 'META', 'LINK',
+    'TEXTAREA', 'INPUT', 'SELECT', 'OPTION', 'BUTTON', 'PRE', 'CODE', 'KBD', 'SAMP', 'VAR',
+    'SVG', 'MATH', 'CANVAS', 'IFRAME', 'OBJECT', 'EMBED', 'VIDEO', 'AUDIO', 'IMG', 'PICTURE',
+  ]);
+  const SKIP_SELECTOR = [
+    ...[...SKIP_TAGS].map((tag) => tag.toLowerCase()),
+    '[translate="no"]', '.notranslate', '[contenteditable]:not([contenteditable="false"])',
+    'glint-tr', 'glint-translate',
+  ].join(',');
+  const INLINE_DISPLAYS = new Set(['inline', 'inline-block', 'inline-flex', 'inline-grid', 'contents', 'ruby', 'ruby-text']);
+  const HEADINGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
+
+  let settings = { ...DEFAULTS };
+  let active = false;
+  let sheet = null;
+  let port = null;
+  let batchSeq = 0;
+  let pumpQueued = false;
+  let scanTimer = 0;
+  let lastError = null;
+  // Set by configuration-type errors: further requests would fail the same way.
+  let halted = null;
+  // Root element -> units found in it that wait to scroll into view.
+  const pendingByRoot = new Map();
+  // Element actually observed (a root without a box uses its ancestor) -> roots.
+  const rootsByTarget = new Map();
+  const queue = [];
+  // Source text -> units waiting for it; each text is requested once.
+  const waiting = new Map();
+  const inFlight = new Map();
+  // Source text -> translation, for the current target language.
+  const translations = new Map();
+  const churn = new WeakMap();
+  const dirty = new Set();
+  const cleanups = [];
+
+  const intersection = new IntersectionObserver(onIntersect, { rootMargin: '600px 0px' });
+  const mutations = new MutationObserver(onMutations);
+
+  // ---------------------------------------------------------------- helpers
+
+  function listen(target, type, handler, options) {
+    target.addEventListener(type, handler, options);
+    cleanups.push(() => target.removeEventListener(type, handler, options));
+  }
+
+  function primary(code) {
+    return String(code || '').toLowerCase().split(/[-_]/)[0];
+  }
+
+  function count(text, re) {
+    return (text.match(re) || []).length;
+  }
+
+  function worthTranslating(text) {
+    return count(text, /\p{L}/gu) >= 2 || /\p{Script=Han}/u.test(text);
+  }
+
+  // Cheap check that a paragraph is already written in the target language.
+  // Latin-script targets cannot be told apart by script, so for them the
+  // model copies such text unchanged and the copy is hidden afterwards.
+  function inTargetLanguage(text) {
+    const target = primary(settings.targetLang);
+    const letters = count(text, /\p{L}/gu) || 1;
+    const share = (re) => count(text, re) / letters;
+    const kana = /[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(text);
+    switch (target) {
+      case 'zh': return !kana && share(/\p{Script=Han}/gu) > 0.5;
+      case 'ja': return kana;
+      case 'ko': return share(/\p{Script=Hangul}/gu) > 0.5;
+      case 'ru': return share(/\p{Script=Cyrillic}/gu) > 0.5;
+      case 'ar': return share(/\p{Script=Arabic}/gu) > 0.5;
+      case 'th': return share(/\p{Script=Thai}/gu) > 0.5;
+      default: return primary(document.documentElement.lang) === target && share(/\p{Script=Latin}/gu) > 0.5;
+    }
+  }
+
+  function normalize(text) {
+    return text.replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  function owned(node) {
+    const el = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+    return Boolean(el?.closest('glint-tr, glint-translate'));
+  }
+
+  // ------------------------------------------------------------- scanning
+
+  // Each scan memoizes computed display values; layout does not change
+  // within one synchronous scan.
+  function displayOf(el, memo) {
+    let value = memo.display.get(el);
+    if (value === undefined) {
+      value = getComputedStyle(el).display;
+      memo.display.set(el, value);
+    }
+    return value;
+  }
+
+  function skippable(el) {
+    if (SKIP_TAGS.has(el.tagName.toUpperCase())) return true;
+    if (el === document.body) return false;
+    return el.getAttribute('translate') === 'no' || el.classList.contains('notranslate') || el.getAttribute('aria-hidden') === 'true' || el.isContentEditable;
+  }
+
+  // An element whose whole subtree flows as inline content (a link, an
+  // emphasis…) belongs to the surrounding paragraph.
+  function isInlineTree(el, memo) {
+    let result = memo.inline.get(el);
+    if (result !== undefined) return result;
+    const display = displayOf(el, memo);
+    result = display === 'none' || OWN_TAGS.has(el.tagName) || INLINE_DISPLAYS.has(display);
+    if (result && display !== 'none' && !OWN_TAGS.has(el.tagName) && !skippable(el)) {
+      for (const child of el.children) {
+        if (!isInlineTree(child, memo)) {
+          result = false;
+          break;
+        }
+      }
+    }
+    memo.inline.set(el, result);
+    return result;
+  }
+
+  function textOf(nodes, memo) {
+    let out = '';
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        out += node.data.replace(/\s+/g, ' ');
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node.tagName === 'BR') out += '\n';
+        else if (node.tagName === 'CODE' || node.tagName === 'KBD' || node.tagName === 'SAMP' || node.tagName === 'VAR') out += node.textContent;
+        else if (!OWN_TAGS.has(node.tagName) && !skippable(node) && displayOf(node, memo) !== 'none') node.childNodes.forEach(walk);
+      }
+    };
+    nodes.forEach(walk);
+    return out.replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  function isBlank(node) {
+    return node.nodeType === Node.TEXT_NODE && !node.data.trim();
+  }
+
+  function makeUnit(root, run, memo) {
+    let start = 0;
+    let end = run.length - 1;
+    while (start <= end && isBlank(run[start])) start++;
+    while (end >= start && isBlank(run[end])) end--;
+    if (start > end) return null;
+    const nodes = run.slice(start, end + 1);
+    // A lone code span is not prose.
+    if (nodes.length === 1 && nodes[0].nodeType === Node.ELEMENT_NODE && skippable(nodes[0])) return null;
+    const text = textOf(nodes, memo).slice(0, MAX_UNIT_CHARS);
+    if (!worthTranslating(text) || inTargetLanguage(text)) return null;
+
+    const next = nodes.at(-1).nextSibling;
+    if (next?.tagName === 'GLINT-TR') {
+      if (next.glintSource === text) return null;
+      // The page changed the text under an existing translation.
+      next.remove();
+      const changes = (churn.get(root) || 0) + 1;
+      churn.set(root, changes);
+      if (changes > MAX_CHURN) return null;
+    }
+    return { root, nodes, text, wrapper: null, retries: 0 };
+  }
+
+  function collect(root, memo) {
+    const units = [];
+    let run = [];
+    const flush = () => {
+      const unit = makeUnit(root, run, memo);
+      if (unit) units.push(unit);
+      run = [];
+    };
+    for (const child of root.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        run.push(child);
+        continue;
+      }
+      if (child.nodeType !== Node.ELEMENT_NODE) continue;
+      if (child.tagName === 'GLINT-TR') {
+        flush();
+        continue;
+      }
+      if (OWN_TAGS.has(child.tagName)) continue;
+      const display = displayOf(child, memo);
+      if (skippable(child)) {
+        // Inline code or icons stay part of the sentence around them.
+        if (INLINE_DISPLAYS.has(display)) run.push(child);
+        else if (display !== 'none') flush();
+        continue;
+      }
+      if (display === 'none') {
+        // Hidden menus, tabs and dialogs: their paragraphs get translated
+        // once they are shown and scroll into view.
+        if (child.firstChild) collect(child, memo);
+        continue;
+      }
+      if (isInlineTree(child, memo)) {
+        run.push(child);
+      } else {
+        flush();
+        collect(child, memo);
+      }
+    }
+    flush();
+    register(root, units, memo);
+  }
+
+  function register(root, units, memo) {
+    const previous = pendingByRoot.has(root);
+    if (units.length) pendingByRoot.set(root, units);
+    else pendingByRoot.delete(root);
+    if (units.length && !previous) {
+      // display: contents elements have no box to observe.
+      let target = root;
+      while (target.parentElement && displayOf(target, memo) === 'contents') target = target.parentElement;
+      let roots = rootsByTarget.get(target);
+      if (!roots) {
+        roots = new Set();
+        rootsByTarget.set(target, roots);
+        intersection.observe(target);
+      }
+      roots.add(root);
+    }
+  }
+
+  function newMemo() {
+    return { display: new Map(), inline: new Map() };
+  }
+
+  function scanAll() {
+    if (document.body) collect(document.body, newMemo());
+  }
+
+  function scheduleScan() {
+    if (scanTimer) return;
+    scanTimer = setTimeout(() => {
+      scanTimer = 0;
+      if (!active) return;
+      const memo = newMemo();
+      const roots = new Set();
+      for (const node of dirty) {
+        let el = node;
+        if (!el?.isConnected || el.closest(SKIP_SELECTOR)) continue;
+        // Inline content belongs to the paragraph of its block ancestor.
+        while (el !== document.body && el.parentElement && isInlineTree(el, memo)) el = el.parentElement;
+        roots.add(el);
+      }
+      dirty.clear();
+      const list = [...roots];
+      for (const el of list) {
+        if (!list.some((other) => other !== el && other.contains(el))) collect(el, memo);
+      }
+    }, 300);
+  }
+
+  function onMutations(records) {
+    for (const record of records) {
+      if (owned(record.target)) continue;
+      if (record.type === 'childList') {
+        const foreign = [...record.addedNodes].some((n) => !OWN_TAGS.has(n.tagName));
+        // Our own wrappers are removed only while the observer is off, or
+        // by makeUnit (which rescans anyway); anything else is the page.
+        const lost = [...record.removedNodes].some((n) => n.tagName === 'GLINT-TR');
+        const removedText = [...record.removedNodes].some((n) => !OWN_TAGS.has(n.tagName));
+        if (!foreign && !lost && !removedText) continue;
+        dirty.add(record.target);
+      } else if (record.target.parentElement) {
+        dirty.add(record.target.parentElement);
+      }
+    }
+    if (dirty.size) scheduleScan();
+  }
+
+  function onIntersect(entries) {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const roots = rootsByTarget.get(entry.target);
+      rootsByTarget.delete(entry.target);
+      intersection.unobserve(entry.target);
+      for (const root of roots || []) {
+        const units = pendingByRoot.get(root);
+        pendingByRoot.delete(root);
+        for (const unit of units || []) enqueue(unit);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------ rendering
+
+  function ensureSheet() {
+    if (!sheet) {
+      sheet = new CSSStyleSheet();
+      sheet.replaceSync(GLINT_PAGE_CSS);
+    }
+    if (!document.adoptedStyleSheets.includes(sheet)) document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+  }
+
+  function insertWrapper(unit) {
+    const last = unit.nodes.at(-1);
+    const short = unit.text.length <= 24 && !unit.text.includes('\n');
+    const mode = short && !HEADINGS.has(unit.root.tagName) ? 'inline' : 'block';
+    const wrapper = h(
+      'glint-tr',
+      {
+        'data-glint-mode': mode,
+        'data-glint-state': 'loading',
+        'data-glint-style': settings.pageStyle,
+        lang: settings.targetLang,
+        translate: 'no',
+        onclick: (event) => {
+          if (wrapper.dataset.glintState !== 'error') return;
+          // Retrying must not follow a link the paragraph sits in.
+          event.preventDefault();
+          event.stopPropagation();
+          retry(unit);
+        },
+      },
+      h('glint-tr-text'),
+    );
+    wrapper.glintSource = unit.text;
+    last.after(wrapper);
+    unit.wrapper = wrapper;
+  }
+
+  function enqueue(unit) {
+    if (!active || !unit.nodes.every((node) => node.isConnected)) return;
+    if (!unit.wrapper) insertWrapper(unit);
+    const cached = translations.get(unit.text);
+    if (cached !== undefined) {
+      fill(unit, cached);
+      return;
+    }
+    if (halted) {
+      fail(unit, halted);
+      return;
+    }
+    queue.push(unit);
+    schedulePump();
+  }
+
+  function fill(unit, translated) {
+    const wrapper = unit.wrapper;
+    if (!wrapper) return;
+    if (normalize(translated) === normalize(unit.text)) {
+      wrapper.dataset.glintState = 'same';
+      return;
+    }
+    wrapper.firstChild.textContent = translated;
+    wrapper.title = '';
+    wrapper.dataset.glintState = 'done';
+  }
+
+  function fail(unit, error) {
+    const wrapper = unit.wrapper;
+    if (!wrapper) return;
+    wrapper.dataset.glintState = 'error';
+    wrapper.firstChild.textContent = '翻译失败，点击重试';
+    wrapper.title = [error.message, error.detail].filter(Boolean).join('\n');
+  }
+
+  function retry(unit) {
+    if (!unit.wrapper) return;
+    halted = null;
+    unit.retries = 0;
+    unit.wrapper.dataset.glintState = 'loading';
+    unit.wrapper.firstChild.textContent = '';
+    unit.wrapper.title = '';
+    queue.push(unit);
+    schedulePump();
+  }
+
+  function applyPageStyle() {
+    for (const wrapper of document.querySelectorAll('glint-tr')) wrapper.dataset.glintStyle = settings.pageStyle;
+  }
+
+  // ------------------------------------------------------------ messaging
+
+  function getPort() {
+    if (port) return port;
+    try {
+      port = chrome.runtime.connect({ name: PORT_NAME });
+    } catch {
+      return null;
+    }
+    port.onMessage.addListener(onPortMessage);
+    port.onDisconnect.addListener(() => {
+      port = null;
+      // The worker may have been suspended mid-request: retry once.
+      const batches = [...inFlight.values()];
+      inFlight.clear();
+      for (const batch of batches) settle(batch, batch.texts, { code: 'disconnected', message: '与扩展的连接已断开', detail: '请重试；若扩展刚更新过，请刷新页面' });
+    });
+    return port;
+  }
+
+  // Everything enqueued in the same task (one intersection callback) is
+  // batched together.
+  function schedulePump() {
+    if (pumpQueued) return;
+    pumpQueued = true;
+    queueMicrotask(pump);
+  }
+
+  function pump() {
+    pumpQueued = false;
+    while (active && inFlight.size < MAX_IN_FLIGHT && queue.length) {
+      const texts = [];
+      let chars = 0;
+      while (queue.length) {
+        const unit = queue[0];
+        if (!unit.wrapper?.isConnected) {
+          queue.shift();
+          continue;
+        }
+        const cached = translations.get(unit.text);
+        if (cached !== undefined) {
+          queue.shift();
+          fill(unit, cached);
+          continue;
+        }
+        const pending = waiting.get(unit.text);
+        if (pending) {
+          // Same text already requested (repeated menu items and the like).
+          queue.shift();
+          pending.push(unit);
+          continue;
+        }
+        if (texts.length && (texts.length >= BATCH_SEGMENTS || chars + unit.text.length > BATCH_CHARS)) break;
+        queue.shift();
+        texts.push(unit.text);
+        chars += unit.text.length;
+        waiting.set(unit.text, [unit]);
+      }
+      if (!texts.length) break;
+      send({ id: ++batchSeq, texts, done: new Set() });
+    }
+  }
+
+  function send(batch) {
+    const p = getPort();
+    if (!p) {
+      teardown();
+      return;
+    }
+    inFlight.set(batch.id, batch);
+    p.postMessage({ type: 'batch', id: batch.id, segments: batch.texts, title: document.title, targetLang: settings.targetLang });
+  }
+
+  // Hands the units of unfinished texts back to the queue once, or fails them.
+  function settle(batch, texts, error) {
+    for (const text of texts) {
+      if (batch.done.has(text)) continue;
+      const units = waiting.get(text) || [];
+      waiting.delete(text);
+      for (const unit of units) {
+        if (!error.final && unit.retries < 1) {
+          unit.retries++;
+          queue.unshift(unit);
+        } else {
+          fail(unit, error);
+        }
+      }
+    }
+    if (queue.length) schedulePump();
+  }
+
+  function onPortMessage(message) {
+    const batch = inFlight.get(message.id);
+    if (!batch) return;
+    if (message.type === 'segment') {
+      const text = batch.texts[message.index];
+      if (text === undefined) return;
+      batch.done.add(text);
+      translations.set(text, message.text);
+      for (const unit of waiting.get(text) || []) fill(unit, message.text);
+      waiting.delete(text);
+      return;
+    }
+    inFlight.delete(message.id);
+    if (message.type === 'done') {
+      settle(batch, message.missing.map((i) => batch.texts[i]), { message: '模型没有返回这一段的译文' });
+    } else if (message.type === 'error') {
+      lastError = message;
+      settle(batch, batch.texts, { ...message, final: true });
+      if (SETTINGS_ERRORS.has(message.code) || message.code === 'http_402' || message.code === 'http_429') {
+        halted = message;
+        for (const unit of queue.splice(0)) fail(unit, message);
+      }
+    }
+    schedulePump();
+  }
+
+  // ---------------------------------------------------------- start / stop
+
+  function start() {
+    if (active || !document.body) return;
+    if (!alive()) return teardown();
+    active = true;
+    lastError = null;
+    halted = null;
+    ensureSheet();
+    scanAll();
+    mutations.observe(document.body, { childList: true, subtree: true, characterData: true });
+  }
+
+  function stop() {
+    if (!active) return;
+    active = false;
+    mutations.disconnect();
+    intersection.disconnect();
+    clearTimeout(scanTimer);
+    scanTimer = 0;
+    if (inFlight.size) {
+      try {
+        port?.postMessage({ type: 'cancel' });
+      } catch {
+        port = null;
+      }
+    }
+    inFlight.clear();
+    waiting.clear();
+    queue.length = 0;
+    pendingByRoot.clear();
+    rootsByTarget.clear();
+    dirty.clear();
+    for (const wrapper of document.querySelectorAll('glint-tr')) wrapper.remove();
+  }
+
+  function toggle() {
+    if (active) stop();
+    else start();
+  }
+
+  function status() {
+    return { active, busy: active && (inFlight.size > 0 || queue.length > 0) };
+  }
+
+  // ------------------------------------------------------------- settings
+
+  async function loadSettings() {
+    try {
+      const { settings: stored } = await chrome.storage.local.get('settings');
+      settings = { ...DEFAULTS, ...(stored || {}) };
+    } catch {
+      // Extension context gone.
+    }
+  }
+
+  function onStorageChanged(changes, area) {
+    if (area !== 'local' || !changes.settings) return;
+    const previous = settings;
+    settings = { ...DEFAULTS, ...(changes.settings.newValue || {}) };
+    if (previous.targetLang !== settings.targetLang) {
+      translations.clear();
+      if (active) {
+        stop();
+        start();
+      }
+    }
+    if (previous.pageStyle !== settings.pageStyle) applyPageStyle();
+  }
+
+  function onRuntimeMessage(message, _sender, sendResponse) {
+    if (message?.type !== 'glint:page') return;
+    if (message.action === 'toggle') toggle();
+    else if (message.action === 'start') start();
+    else if (message.action === 'stop') stop();
+    sendResponse({ ...status(), error: lastError?.message || null });
+  }
+
+  function teardown() {
+    stop();
+    for (const cleanup of cleanups.splice(0)) cleanup();
+    try {
+      port?.disconnect();
+    } catch {
+      // Already gone.
+    }
+    port = null;
+    if (sheet) document.adoptedStyleSheets = document.adoptedStyleSheets.filter((s) => s !== sheet);
+  }
+
+  listen(document, 'glint:page-teardown', teardown);
+  chrome.runtime.onMessage.addListener(onRuntimeMessage);
+  chrome.storage.onChanged.addListener(onStorageChanged);
+  cleanups.push(() => {
+    try {
+      chrome.runtime.onMessage.removeListener(onRuntimeMessage);
+      chrome.storage.onChanged.removeListener(onStorageChanged);
+    } catch {
+      // Context invalidated.
+    }
+  });
+  loadSettings();
+})();
