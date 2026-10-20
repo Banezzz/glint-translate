@@ -312,16 +312,25 @@ function fillLanguageSelect(select, value) {
   select.value = value;
 }
 
-async function renderShortcut() {
+async function renderShortcuts() {
   const commands = await chrome.commands.getAll();
-  const shortcut = commands.find((c) => c.name === 'translate-selection')?.shortcut || '';
-  const el = $('shortcut');
-  if (!shortcut) {
-    el.textContent = '未设置';
-    return;
+  for (const [name, id] of [['translate-selection', 'shortcut'], ['translate-page', 'pageShortcut']]) {
+    const shortcut = commands.find((c) => c.name === name)?.shortcut || '';
+    const el = $(id);
+    if (!shortcut) {
+      el.textContent = '未设置';
+      continue;
+    }
+    const keys = shortcut.includes('+') ? shortcut.split('+') : [...shortcut];
+    el.replaceChildren(...keys.map((key) => Object.assign(document.createElement('kbd'), { textContent: key })));
   }
-  const keys = shortcut.includes('+') ? shortcut.split('+') : [...shortcut];
-  el.replaceChildren(...keys.map((key) => Object.assign(document.createElement('kbd'), { textContent: key })));
+}
+
+function renderBallHint() {
+  const hidden = settings.ballDisabledSites.length;
+  $('ballHint').textContent = hidden
+    ? `在网页右侧显示，点击即翻译整页 · 已在 ${hidden} 个网站隐藏（可在弹出面板中恢复）`
+    : '在网页右侧显示，点击即翻译整页，可上下拖动';
 }
 
 function checkRadio(name, value) {
@@ -405,8 +414,10 @@ async function init() {
   checkRadio('theme', settings.theme);
   $('fontSize').value = settings.fontSize;
   $('fontSizeValue').textContent = `${settings.fontSize} px`;
+  $('floatBall').checked = settings.floatBall;
+  renderBallHint();
   $('tryKbd').textContent = isMac ? '⌘ ↵' : 'Ctrl ↵';
-  renderShortcut();
+  renderShortcuts();
 
   $('baseUrl').addEventListener('input', () => {
     renderPresets();
@@ -448,6 +459,8 @@ async function init() {
     saveFontSize();
   });
   $('editShortcut').addEventListener('click', () => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }));
+  $('editPageShortcut').addEventListener('click', () => chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }));
+  $('floatBall').addEventListener('change', (e) => save({ floatBall: e.target.checked }));
 
   $('tryButton').addEventListener('click', runTry);
   $('tryInput').addEventListener('keydown', (e) => {
@@ -463,6 +476,7 @@ async function init() {
     const next = changes.settings.newValue;
     if (next.enabled !== $('enabled').checked) $('enabled').checked = next.enabled;
     if (next.targetLang !== $('targetLang').value) $('targetLang').value = next.targetLang;
+    if (next.floatBall !== undefined && next.floatBall !== $('floatBall').checked) $('floatBall').checked = next.floatBall;
   });
 
   // Re-check a configured endpoint whose detection is missing or stale.

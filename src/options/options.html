@@ -125,6 +125,27 @@
         </div>
       </section>
 
+      <section class="panel" aria-labelledby="sec-page">
+        <div class="panel-head">
+          <h2 id="sec-page">网页翻译</h2>
+          <p>整页双语对照：译文插在每段原文下方，只翻译滚动到的内容。点击悬浮球、按快捷键或在页面右键菜单中开启。</p>
+        </div>
+        <div class="row">
+          <label class="row-label" for="floatBall">悬浮球</label>
+          <div class="row-control inline">
+            <input class="switch" id="floatBall" type="checkbox" role="switch" />
+            <span class="hint inline-hint" id="ballHint">在网页右侧显示，点击即翻译整页，可上下拖动</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-label">快捷键</div>
+          <div class="row-control inline">
+            <span id="pageShortcut" class="shortcut"></span>
+            <button class="btn btn-sm btn-ghost" id="editPageShortcut" type="button">修改</button>
+          </div>
+        </div>
+      </section>
+
       <section class="panel" aria-labelledby="sec-ui">
         <div class="panel-head">
           <h2 id="sec-ui">交互与外观</h2>
