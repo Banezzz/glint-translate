@@ -622,7 +622,12 @@
     );
     ball.tip = h('span', { class: 'tip' });
     ball.bubble = h('div', { class: 'bubble', role: 'alert', hidden: true });
-    ball.dock = h('div', { class: 'dock' }, ball.bubble, ball.tip, ball.button);
+    const hide = h(
+      'button',
+      { class: 'hide-btn', type: 'button', title: '在此网站隐藏悬浮球（可在弹出面板中恢复）', 'aria-label': '在此网站隐藏悬浮球', onclick: hideOnSite },
+      icon('close'),
+    );
+    ball.dock = h('div', { class: 'dock' }, ball.bubble, ball.tip, h('div', { class: 'ball-wrap' }, ball.button, hide));
     ball.root = h('div', { class: 'ball-root' }, ball.dock);
     shadow.append(ball.root);
     document.documentElement.append(ball.host);
@@ -684,6 +689,17 @@
     ball.button.addEventListener('pointermove', move);
     ball.button.addEventListener('pointerup', end);
     ball.button.addEventListener('pointercancel', end);
+  }
+
+  async function hideOnSite() {
+    try {
+      const { settings: stored = {} } = await chrome.storage.local.get('settings');
+      const sites = new Set(stored.ballDisabledSites || []);
+      sites.add(location.hostname);
+      await chrome.storage.local.set({ settings: { ...stored, ballDisabledSites: [...sites] } });
+    } catch {
+      teardown();
+    }
   }
 
   function showBubble(error) {

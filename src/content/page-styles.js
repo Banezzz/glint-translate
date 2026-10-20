@@ -113,6 +113,21 @@ svg { display: block; flex: none; }
   animation: g-spin 0.8s linear infinite;
 }
 
+.hide-btn {
+  position: absolute; top: -8px; left: -6px;
+  width: 18px; height: 18px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  color: var(--g-muted); background: var(--g-surface);
+  box-shadow: var(--g-shadow);
+  opacity: 0; pointer-events: none;
+  transition: opacity 140ms ease;
+}
+.hide-btn svg { width: 11px; height: 11px; }
+.hide-btn:hover { color: var(--g-text); }
+.dock:hover:not(.dragging) .hide-btn { opacity: 1; pointer-events: auto; }
+.ball-wrap { position: relative; }
+
 .tip {
   padding: 5px 10px;
   border-radius: 8px;
@@ -148,7 +163,7 @@ svg { display: block; flex: none; }
 @keyframes g-spin { to { transform: rotate(360deg); } }
 @keyframes g-in { from { opacity: 0; transform: translateY(-50%) translateX(6px); } }
 @media (prefers-reduced-motion: reduce) {
-  .ball, .tip { transition: none; }
+  .ball, .tip, .hide-btn { transition: none; }
   .ring { animation-duration: 2.4s; }
 }
 `;

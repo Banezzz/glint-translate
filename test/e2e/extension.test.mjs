@@ -309,7 +309,7 @@ test('the floating ball translates the page bilingually, lazily and reversibly',
   await setSettings({ pageStyle: 'dashed', theme: 'auto' });
 });
 
-test('page translation also runs from the menu/shortcut message', async () => {
+test('page translation also runs from the menu/shortcut message, and the ball can be hidden per site', async () => {
   const page = await context.newPage();
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.goto(`${mock.url}/article.html`);
@@ -325,6 +325,14 @@ test('page translation also runs from the menu/shortcut message', async () => {
   await page.waitForTimeout(250);
   await shot(page, 'ball-dark', { clip: { x: 780, y: 360, width: 400, height: 280 } });
 
+  await page.locator('glint-ball .hide-btn').click();
+  await page.locator('glint-ball').waitFor({ state: 'detached', timeout: 3000 });
+  const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
+  assert.deepEqual(stored.settings.ballDisabledSites, ['127.0.0.1']);
+  // Hiding the ball does not undo the translation.
+  assert.ok((await page.locator('glint-tr').count()) > 0);
+  await setSettings({ ballDisabledSites: [] });
+  await page.locator('glint-ball .ball').waitFor({ timeout: 3000 });
   await page.close();
 });
 
