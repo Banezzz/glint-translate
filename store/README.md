@@ -46,7 +46,7 @@ Glint 是一个简洁的翻译插件：选中网页上的文字，或者一键�
 · 卡片可切换目标语言、复制、朗读、重新翻译、固定和拖动
 
 【用你自己的模型】
-· 支持任何 OpenAI 兼容或 Anthropic（Claude）兼容的接口：OpenAI、Claude、DeepSeek、OpenRouter、Gemini、硅基流动、本地 Ollama 等
+· 支持 OpenAI 兼容和 Anthropic 兼容两种接口协议，云端服务和本机运行的模型都可以
 · 粘贴地址和 Key 后自动识别接口协议、拉取可用模型
 · 划词翻译、单词词典、网页翻译三类提示词都可以自定义
 
@@ -61,7 +61,7 @@ Glint 是一个简洁的翻译插件：选中网页上的文字，或者一键�
 · 要翻译的文字只发送到你自己配置的 API 地址
 · 开源：https://github.com/Banezzz/glint-translate
 
-使用前需要准备一个大模型服务的 API Key，或在本机运行 Ollama。
+使用前需要准备一个大模型服务的 API 地址和 Key，或在本机运行的模型服务。
 ```
 
 ### 详细说明 · English
@@ -83,7 +83,7 @@ SELECTION TRANSLATION
 • Change the target language, copy, read aloud, retranslate, pin and drag the card
 
 YOUR OWN MODEL
-• Works with any OpenAI-compatible or Anthropic (Claude) compatible API: OpenAI, Claude, DeepSeek, OpenRouter, Gemini, SiliconFlow, a local Ollama and more
+• Works with OpenAI-compatible and Anthropic-compatible APIs, from cloud services to models running on your own computer
 • Paste an endpoint and key; Glint detects the protocol and lists the models
 • Customize the prompts for selections, dictionary entries and pages
 
@@ -98,8 +98,10 @@ PRIVACY
 • Text is sent only to the API endpoint you configure
 • Open source: https://github.com/Banezzz/glint-translate
 
-You need an API key for a model service, or Ollama running on your computer.
+You need an API endpoint and key for a model service, or a model server running on your computer.
 ```
+
+> 第一次提交（2026-10-21）因「产品说明中有过多关键字」被拒（违规参考 ID：Yellow Argon），原因是详细说明里逐个列出了各家模型服务的名字。现在的说明只写接口协议，不再罗列品牌名。以后修改说明时也不要堆砌服务名或关键词。
 
 ### 其余字段
 
