@@ -92,14 +92,28 @@ export function stripThinking(full) {
   return end === -1 ? '' : lead.slice(end + 8).trimStart();
 }
 
-async function* rawDeltas(res) {
+// Rejects once the signal aborts, so a read on a stalled body cannot hang
+// even when the body stream ignores the fetch signal.
+function abortion(signal) {
+  return new Promise((_, reject) => {
+    if (signal.aborted) reject(signal.reason);
+    else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
+}
+
+// onData runs for every chunk received, including ones that carry no text
+// (reasoning tokens, keep-alive comments).
+async function* rawDeltas(res, signal, onData) {
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   const parser = createSSEParser();
+  const aborted = abortion(signal);
+  aborted.catch(() => {});
   let mode = null; // 'sse' | 'json'
   let jsonText = '';
   try {
     for (;;) {
-      const { value, done } = await reader.read();
+      const { value, done } = await Promise.race([reader.read(), aborted]);
+      if (!done) onData();
       const chunk = done ? '' : value;
       if (mode === null && chunk.trim()) mode = /^[[{]/.test(chunk.trimStart()) ? 'json' : 'sse';
       if (mode === 'json') {
@@ -135,20 +149,44 @@ async function* rawDeltas(res) {
   }
 }
 
+export const DEFAULT_TIMEOUT_SECONDS = 60;
+
 /**
  * Streams a completion and yields visible text deltas.
  * Throws TranslationError on HTTP or provider errors; AbortError propagates.
+ * timeoutMs bounds how long the server may stay silent: before the response
+ * arrives, and between chunks of it. A slow but steady stream never times out.
  */
-export async function* streamChat({ request, fetchImpl = fetch, signal }) {
+export async function* streamChat({ request, fetchImpl = fetch, signal, timeoutMs = DEFAULT_TIMEOUT_SECONDS * 1000 }) {
+  const stall = new AbortController();
+  let timer = 0;
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => stall.abort(new DOMException('stalled', 'TimeoutError')), timeoutMs);
+  };
+  const combined = signal ? AbortSignal.any([signal, stall.signal]) : stall.signal;
+  const timedOut = () => stall.signal.aborted && !signal?.aborted;
+  const timeoutError = () => new TranslationError('timeout', `No data from the server for ${Math.round(timeoutMs / 1000)} s`);
+  arm();
+  try {
+    yield* streamResponse({ request, fetchImpl, signal, combined, arm, timedOut, timeoutError });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function* streamResponse({ request, fetchImpl, signal, combined, arm, timedOut, timeoutError }) {
   let res;
   try {
-    res = await fetchImpl(request.url, { ...request.init, signal });
+    res = await Promise.race([fetchImpl(request.url, { ...request.init, signal: combined }), abortion(combined)]);
   } catch (err) {
+    if (timedOut()) throw timeoutError();
     if (signal?.aborted) throw err;
     throw new TranslationError('network', String(err?.message || err));
   }
+  arm();
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
+    const text = await Promise.race([res.text(), abortion(combined)]).catch(() => '');
     let detail = text.slice(0, 300);
     try {
       detail = errorMessage(JSON.parse(text)) || detail;
@@ -161,12 +199,17 @@ export async function* streamChat({ request, fetchImpl = fetch, signal }) {
 
   let full = '';
   let emitted = 0;
-  for await (const delta of rawDeltas(res)) {
-    full += delta;
-    const visible = stripThinking(full);
-    if (visible.length > emitted) {
-      yield visible.slice(emitted);
-      emitted = visible.length;
+  try {
+    for await (const delta of rawDeltas(res, combined, arm)) {
+      full += delta;
+      const visible = stripThinking(full);
+      if (visible.length > emitted) {
+        yield visible.slice(emitted);
+        emitted = visible.length;
+      }
     }
+  } catch (err) {
+    if (timedOut()) throw timeoutError();
+    throw err;
   }
 }

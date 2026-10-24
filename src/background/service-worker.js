@@ -3,7 +3,7 @@ import { detectSourceLanguage, resolveTargets } from '../shared/lang.js';
 import { buildPagePrompt, buildSystemPrompt, clampInput, isDictionaryCandidate } from '../shared/prompt.js';
 import { MAX_BATCH_CHARS, MAX_BATCH_SEGMENTS, buildSegmentsInput, createSegmentParser } from '../shared/segments.js';
 import { effectiveProvider, isProviderReady, loadSettings } from '../shared/settings.js';
-import { buildChatRequest, streamChat, TranslationError } from '../shared/translator.js';
+import { buildChatRequest, DEFAULT_TIMEOUT_SECONDS, streamChat, TranslationError } from '../shared/translator.js';
 
 const PORT_NAME = 'glint:translate';
 const PAGE_PORT_NAME = 'glint:page';
@@ -33,6 +33,30 @@ function errorPayload(err, locale) {
   const code = err instanceof TranslationError ? err.code : 'unknown';
   const detail = err instanceof TranslationError ? err.detail : String(err?.message || err);
   return { type: 'error', code, message: errorText(locale, code), detail };
+}
+
+// Transient failures get more attempts: the server stalled, the connection
+// dropped, rate limits and server errors. Waits before attempts 2 and 3.
+const RETRY_DELAYS_MS = [1000, 3000];
+
+function retryable(err) {
+  const code = err instanceof TranslationError ? err.code : '';
+  return ['timeout', 'network', 'http_408', 'http_429'].includes(code) || /^http_5\d\d$/.test(code);
+}
+
+function wait(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    }, { once: true });
+  });
+}
+
+function timeoutMsOf(settings) {
+  const seconds = Number(settings.timeoutSeconds) || DEFAULT_TIMEOUT_SECONDS;
+  return Math.min(Math.max(seconds, 1), 600) * 1000;
 }
 
 function notConfigured(locale) {
@@ -151,7 +175,22 @@ async function runTranslation(port, message, signal) {
     }
   };
 
-  const settings = await loadSettings();
+  // Every request gets an answer, even when something unexpected throws;
+  // otherwise the card would wait forever.
+  let locale = localeOf({});
+  const release = keepAlive();
+  try {
+    const settings = await loadSettings();
+    locale = localeOf(settings);
+    await translateText(settings, message, signal, post);
+  } catch (err) {
+    if (!signal.aborted) post(errorPayload(err, locale));
+  } finally {
+    release();
+  }
+}
+
+async function translateText(settings, message, signal, post) {
   const locale = localeOf(settings);
   if (!isProviderReady(settings)) {
     post(notConfigured(locale));
@@ -184,23 +223,26 @@ async function runTranslation(port, message, signal) {
     return;
   }
 
-  const release = keepAlive();
-  try {
-    const system = buildSystemPrompt({ mode, target, fallback, source: sourceLang, template });
-    const request = buildChatRequest({ ...provider, system, text });
-    let full = '';
-    for await (const delta of streamChat({ request, signal })) {
-      full += delta;
-      post({ type: 'delta', text: delta });
+  const system = buildSystemPrompt({ mode, target, fallback, source: sourceLang, template });
+  const request = buildChatRequest({ ...provider, system, text });
+  const timeoutMs = timeoutMsOf(settings);
+  let full = '';
+  for (let attempt = 0; ; attempt++) {
+    try {
+      for await (const delta of streamChat({ request, signal, timeoutMs })) {
+        full += delta;
+        post({ type: 'delta', text: delta });
+      }
+      break;
+    } catch (err) {
+      // Once text is on screen a retry would repeat it; report instead.
+      if (signal.aborted || full || !retryable(err) || attempt >= RETRY_DELAYS_MS.length) throw err;
+      await wait(RETRY_DELAYS_MS[attempt], signal);
     }
-    if (!full.trim()) throw new TranslationError('empty_response');
-    remember(cache, 100, key, full);
-    post({ type: 'done', text: full, cached: false });
-  } catch (err) {
-    if (!signal.aborted) post(errorPayload(err, locale));
-  } finally {
-    release();
   }
+  if (!full.trim()) throw new TranslationError('empty_response');
+  remember(cache, 100, key, full);
+  post({ type: 'done', text: full, cached: false });
 }
 
 /**
@@ -238,10 +280,22 @@ async function runBatch(port, message, signal) {
     }
   };
 
-  const settings = await loadSettings();
-  const locale = localeOf(settings);
+  let locale = localeOf({});
+  const release = keepAlive();
+  try {
+    const settings = await loadSettings();
+    locale = localeOf(settings);
+    await translateBatch(settings, message, signal, post);
+  } catch (err) {
+    if (!signal.aborted) post(errorPayload(err, locale));
+  } finally {
+    release();
+  }
+}
+
+async function translateBatch(settings, message, signal, post) {
   if (!isProviderReady(settings)) {
-    post(notConfigured(locale));
+    post(notConfigured(localeOf(settings)));
     return;
   }
   const segments = (Array.isArray(message.segments) ? message.segments : [])
@@ -253,39 +307,39 @@ async function runBatch(port, message, signal) {
   const keyOf = (text) => JSON.stringify([provider.baseUrl, provider.model, 'page', template, target, text]);
 
   // Serve what is cached; only the rest goes to the model.
-  const pending = [];
+  let pending = [];
   segments.forEach((text, index) => {
     const cached = segmentCache.get(keyOf(text));
     if (cached !== undefined) post({ type: 'segment', index, text: cached });
     else pending.push(index);
   });
-  if (!pending.length) {
-    post({ type: 'done', missing: [] });
-    return;
-  }
 
-  const release = keepAlive();
-  try {
-    const request = buildChatRequest({
-      ...provider,
-      system: buildPagePrompt({ target, title: message.title, template }),
-      text: buildSegmentsInput(pending.map((i) => segments[i])),
-      maxTokens: 4096,
-    });
-    const parser = createSegmentParser(pending.length);
+  const system = buildPagePrompt({ target, title: message.title, template });
+  const timeoutMs = timeoutMsOf(settings);
+  const delivered = new Set();
+  for (let attempt = 0; pending.length; attempt++) {
+    const asked = pending;
+    const parser = createSegmentParser(asked.length);
     const emit = (found) => {
       for (const { index, text } of found) {
-        const original = pending[index];
+        const original = asked[index];
+        delivered.add(original);
         remember(segmentCache, 3000, keyOf(segments[original]), text);
         post({ type: 'segment', index: original, text });
       }
     };
-    for await (const delta of streamChat({ request, signal })) emit(parser.push(delta));
-    emit(parser.finish());
-    post({ type: 'done', missing: parser.missing().map((i) => pending[i]) });
-  } catch (err) {
-    if (!signal.aborted) post(errorPayload(err, locale));
-  } finally {
-    release();
+    try {
+      const request = buildChatRequest({ ...provider, system, text: buildSegmentsInput(asked.map((i) => segments[i])), maxTokens: 4096 });
+      for await (const delta of streamChat({ request, signal, timeoutMs })) emit(parser.push(delta));
+      emit(parser.finish());
+      post({ type: 'done', missing: parser.missing().map((i) => asked[i]) });
+      return;
+    } catch (err) {
+      if (signal.aborted || !retryable(err) || attempt >= RETRY_DELAYS_MS.length) throw err;
+      // Paragraphs that already arrived are kept; ask only for the rest.
+      pending = asked.filter((i) => !delivered.has(i));
+      await wait(RETRY_DELAYS_MS[attempt], signal);
+    }
   }
+  post({ type: 'done', missing: [] });
 }

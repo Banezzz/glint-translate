@@ -31,6 +31,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   ballDisabledSites: [],
   // 'plain' | 'dashed' | 'faded' | 'highlight' | 'border'
   pageStyle: 'dashed',
+  // How long the model service may stay silent before a request is retried.
+  timeoutSeconds: 60,
   // Custom system prompt templates per mode; '' means the built-in default.
   prompts: Object.freeze({ translate: '', dictionary: '', page: '' }),
 });

@@ -9,6 +9,8 @@
 
   const PORT_NAME = 'glint:translate';
   const MAX_TEXT = 6000;
+  // Reconnects after the worker went away mid-request.
+  const MAX_RETRIES = 2;
   const DEFAULTS = { enabled: true, targetLang: 'zh-CN', trigger: 'icon', theme: 'auto', uiLang: 'auto', fontSize: 15, disabledSites: [] };
   const SETTINGS_ERRORS = new Set(['not_configured', 'auth', 'network', 'http_400', 'http_401', 'http_403', 'http_404']);
   const { h, icon, alive, localeOf, localize } = GLINT_DOM;
@@ -23,7 +25,7 @@
   const ui = {};
   let port = null;
   let seq = 0;
-  // The request shown in the card: { id, text, targetOverride, status, raw, meta, error, retried }
+  // The request shown in the card: { id, text, targetOverride, status, raw, meta, error, retries }
   let current = null;
   let lastPointer = null;
   let anchor = null;
@@ -477,15 +479,22 @@
     port.onDisconnect.addListener(() => {
       port = null;
       if (!current || current.status === 'done' || current.status === 'error') return;
-      // The worker may have been suspended mid-request: retry once.
-      if (!current.retried && alive()) {
-        current.retried = true;
-        send(current);
-      } else {
-        fail({ code: 'disconnected', message: t('error.disconnected'), detail: t('error.disconnected.detail') });
-      }
+      retryAfterDisconnect();
     });
     return port;
+  }
+
+  // The worker may have been suspended mid-request: start over, a few times.
+  function retryAfterDisconnect() {
+    if (current.retries < MAX_RETRIES && alive()) {
+      current.retries++;
+      current.raw = '';
+      current.status = 'loading';
+      render();
+      send(current);
+    } else {
+      fail({ code: 'disconnected', message: t('error.disconnected'), detail: t('error.disconnected.detail') });
+    }
   }
 
   function safePost(message) {
@@ -502,17 +511,23 @@
       fail({ code: 'context_invalidated', message: t('error.context_invalidated'), detail: t('error.context_invalidated.detail') });
       return;
     }
-    p.postMessage({
-      type: 'translate',
-      id: request.id,
-      text: request.text,
-      targetLang: request.targetOverride || undefined,
-      fresh: request.fresh,
-    });
+    try {
+      p.postMessage({
+        type: 'translate',
+        id: request.id,
+        text: request.text,
+        targetLang: request.targetOverride || undefined,
+        fresh: request.fresh,
+      });
+    } catch {
+      // The port died before its disconnect event arrived.
+      port = null;
+      retryAfterDisconnect();
+    }
   }
 
   function translate(text, targetOverride, fresh) {
-    current = { id: ++seq, text, targetOverride, fresh, status: 'loading', raw: '', meta: null, mode: 'translate', error: null, retried: false };
+    current = { id: ++seq, text, targetOverride, fresh, status: 'loading', raw: '', meta: null, mode: 'translate', error: null, retries: 0 };
     render();
     send(current);
   }

@@ -3,6 +3,8 @@
 //   /anthropic/v1/models, /anthropic/v1/messages      (x-api-key sk-ant-test)
 //   /page.html                                        (content to select)
 //   /article.html                                     (whole-page translation)
+// Set faults.stall / faults.fail to make the next N chat requests hang without
+// answering or fail with HTTP 503.
 import { createServer } from 'node:http';
 
 export const OPENAI_KEY = 'sk-openai-test';
@@ -131,6 +133,21 @@ async function streamSse(res, events, delayMs) {
 
 export async function startMockServer({ delayMs = 12, port: listenPort = 0 } = {}) {
   const requests = [];
+  const faults = { stall: 0, fail: 0 };
+
+  // Applies an injected fault to a chat request; true when it was handled.
+  function injectFault(res) {
+    if (faults.stall > 0) {
+      faults.stall--;
+      return true; // never answer
+    }
+    if (faults.fail > 0) {
+      faults.fail--;
+      sendJson(res, 503, { error: { message: 'The server is overloaded.' } });
+      return true;
+    }
+    return false;
+  }
 
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -161,6 +178,7 @@ export async function startMockServer({ delayMs = 12, port: listenPort = 0 } = {
           sendJson(res, 400, { error: { message: 'you must provide a model parameter', type: 'invalid_request_error' } });
           return;
         }
+        if (injectFault(res)) return;
         const system = body.messages.find((m) => m.role === 'system')?.content ?? '';
         const text = body.messages.find((m) => m.role === 'user')?.content ?? '';
         const events = chunks(cannedTranslation(text, system)).map(
@@ -218,7 +236,13 @@ export async function startMockServer({ delayMs = 12, port: listenPort = 0 } = {
   return {
     url: `http://127.0.0.1:${port}`,
     requests,
-    close: () => new Promise((resolve) => server.close(resolve)),
+    faults,
+    close: () =>
+      new Promise((resolve) => {
+        server.close(resolve);
+        // Stalled requests would otherwise keep the server open.
+        server.closeAllConnections();
+      }),
   };
 }
 
