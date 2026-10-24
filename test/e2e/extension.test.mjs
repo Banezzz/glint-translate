@@ -564,6 +564,68 @@ test('custom prompts are edited in settings and used for requests', async () => 
   await page.close();
 });
 
+const chatRequests = (from) => mock.requests.slice(from).filter((r) => r.path === '/openai/v1/chat/completions');
+
+async function togglePageFromWorker(page) {
+  await page.bringToFront();
+  return serviceWorker.evaluate(async (url) => {
+    const [tab] = await chrome.tabs.query({ url: `${url}/article.html` });
+    return chrome.tabs.sendMessage(tab.id, { type: 'glint:page', action: 'toggle' }, { frameId: 0 });
+  }, mock.url);
+}
+
+test('page translation retries a request the server never answers', async () => {
+  // A prompt of its own keeps earlier cached translations out of the way.
+  await setSettings({ timeoutSeconds: 1, prompts: { page: 'Stall test into {{to}}.' } });
+  mock.faults.stall = 1;
+  const page = await context.newPage();
+  await page.goto(`${mock.url}/article.html`);
+  const before = mock.requests.length;
+  await togglePageFromWorker(page);
+  await translationOf(page, 'p1').waitFor({ timeout: 10_000 });
+  assert.equal(await translationOf(page, 'p1').textContent(), ARTICLE_ZH[ARTICLE_PARAGRAPHS[0]]);
+  const first = chatRequests(before)[0].body.messages[1].content;
+  assert.ok(chatRequests(before).filter((r) => r.body.messages[1].content === first).length >= 2, 'the stalled batch was sent again');
+  assert.equal(await page.locator('glint-tr[data-glint-state="error"]').count(), 0);
+  await page.close();
+});
+
+test('page translation reports a service that keeps stalling, after retrying', async () => {
+  await setSettings({ timeoutSeconds: 1, prompts: { page: 'Give up test into {{to}}.' } });
+  mock.faults.stall = 1000;
+  const page = await context.newPage();
+  await page.goto(`${mock.url}/article.html`);
+  const before = mock.requests.length;
+  await togglePageFromWorker(page);
+  const failed = page.locator('#p1 > glint-tr[data-glint-state="error"]');
+  await failed.waitFor({ timeout: 20_000 });
+  assert.match(await failed.getAttribute('title'), /模型服务长时间没有响应/);
+  assert.equal(await page.locator('glint-ball .bubble-title').textContent(), '模型服务长时间没有响应');
+  // One request plus two retries for the first batch.
+  const first = chatRequests(before)[0].body.messages[1].content;
+  assert.equal(chatRequests(before).filter((r) => r.body.messages[1].content === first).length, 3);
+  mock.faults.stall = 0;
+  // Clicking the paragraph tries again, now successfully.
+  await failed.click();
+  await translationOf(page, 'p1').waitFor({ timeout: 10_000 });
+  await page.close();
+  await setSettings({ timeoutSeconds: 60, prompts: { page: '' } });
+});
+
+test('selection translation retries server errors before showing the result', async () => {
+  mock.faults.fail = 2;
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 368, height: 600 });
+  await page.goto(`chrome-extension://${extensionId}/src/popup/popup.html`);
+  const before = mock.requests.length;
+  await page.fill('#input', 'Busy servers deserve a second chance.');
+  await page.click('#translateButton');
+  await page.locator('#result', { hasText: '【译】Busy servers deserve a second chance.' }).waitFor({ timeout: 10_000 });
+  assert.equal(chatRequests(before).length, 3);
+  assert.equal(mock.faults.fail, 0);
+  await page.close();
+});
+
 test('popup translates typed text and shows the provider status', async () => {
   const page = await context.newPage();
   await page.setViewportSize({ width: 368, height: 600 });
