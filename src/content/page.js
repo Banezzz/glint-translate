@@ -21,6 +21,9 @@
   const BATCH_CHARS = 2000;
   const MAX_UNIT_CHARS = 5000;
   const MAX_IN_FLIGHT = 3;
+  // Extra attempts for paragraphs lost to a dropped connection or skipped by
+  // the model. The worker already retries timeouts and server errors.
+  const MAX_RETRIES = 2;
   // Units whose text keeps changing (clocks, counters) stop being re-translated.
   const MAX_CHURN = 4;
 
@@ -499,7 +502,7 @@
     port.onMessage.addListener(onPortMessage);
     port.onDisconnect.addListener(() => {
       port = null;
-      // The worker may have been suspended mid-request: retry once.
+      // The worker may have been suspended mid-request: try again.
       const batches = [...inFlight.values()];
       inFlight.clear();
       for (const batch of batches) settle(batch, batch.texts, { code: 'disconnected', message: t('error.disconnected'), detail: t('error.disconnected.detail') });
@@ -559,17 +562,25 @@
       return;
     }
     inFlight.set(batch.id, batch);
-    p.postMessage({ type: 'batch', id: batch.id, segments: batch.texts, title: document.title, targetLang: settings.targetLang });
+    try {
+      p.postMessage({ type: 'batch', id: batch.id, segments: batch.texts, title: document.title, targetLang: settings.targetLang });
+    } catch {
+      // The port died before its disconnect event arrived.
+      port = null;
+      inFlight.delete(batch.id);
+      settle(batch, batch.texts, { code: 'disconnected', message: t('error.disconnected'), detail: t('error.disconnected.detail') });
+    }
   }
 
-  // Hands the units of unfinished texts back to the queue once, or fails them.
+  // Hands the units of unfinished texts back to the queue, or fails them
+  // once they are out of attempts.
   function settle(batch, texts, error) {
     for (const text of texts) {
       if (batch.done.has(text)) continue;
       const units = waiting.get(text) || [];
       waiting.delete(text);
       for (const unit of units) {
-        if (!error.final && unit.retries < 1) {
+        if (!error.final && unit.retries < MAX_RETRIES) {
           unit.retries++;
           queue.unshift(unit);
         } else {
