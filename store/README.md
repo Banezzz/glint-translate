@@ -42,7 +42,7 @@ Glint 是一个简洁的翻译插件：选中网页上的文字，或者一键�
 【划词翻译】
 · 选中文本后点击小图标，原地弹出翻译卡片，译文逐字流式出现
 · 选中单个外文单词时显示音标、词性释义和例句
-· 原文已经是目标语言时，自动改译为第二语言
+· 识别为中文的划词译成第二语言（默认英文），其他语言译成目标语言
 · 卡片可切换目标语言、复制、朗读、重新翻译、固定和拖动
 
 【用你自己的模型】
@@ -79,7 +79,7 @@ BILINGUAL PAGE TRANSLATION
 SELECTION TRANSLATION
 • Select text and click the small icon: a card opens in place and the translation streams in
 • Select a single foreign word to get pronunciation, meanings and an example
-• Text already in your target language is translated into your second language instead
+• Chinese selections are translated into your second language (English by default); other languages use your target language
 • Change the target language, copy, read aloud, retranslate, pin and drag the card
 
 YOUR OWN MODEL

@@ -58,16 +58,69 @@ export function guessLanguageByScript(text) {
   return best;
 }
 
+// Han is counted per character and also credits Japanese, because kanji
+// alone is ambiguous. Kana, hangul, Cyrillic, Arabic and Thai are per
+// character too. Latin is counted per whitespace-separated word, so a
+// Chinese sentence with a few English words stays Chinese. On a tie the
+// earlier language wins, and 'en' is first: two English words and one
+// character that is also credited to Japanese still come out English.
+const WEIGHT_ORDER = ['en', 'zh', 'ko', 'th', 'ja', 'ru', 'ar'];
+
+function languageWeights(text) {
+  const weights = { en: 0, zh: 0, ko: 0, th: 0, ja: 0, ru: 0, ar: 0 };
+  const input = String(text);
+  for (const char of input) {
+    if (/\p{Script=Han}/u.test(char)) {
+      weights.zh += 1;
+      weights.ja += 1;
+    } else if (/[\p{Script=Hiragana}\p{Script=Katakana}]/u.test(char)) {
+      weights.ja += 1;
+    } else if (/\p{Script=Hangul}/u.test(char)) {
+      weights.ko += 1;
+    } else if (/\p{Script=Thai}/u.test(char)) {
+      weights.th += 1;
+    } else if (/\p{Script=Cyrillic}/u.test(char)) {
+      weights.ru += 1;
+    } else if (/\p{Script=Arabic}/u.test(char)) {
+      weights.ar += 1;
+    }
+  }
+  // Pure Han was credited to both. One extra vote makes it Chinese.
+  if (weights.zh > 0 && weights.zh === weights.ja) weights.zh += 1;
+  for (const token of input.split(/\s+/)) {
+    if (/[A-Za-z]/.test(token)) weights.en += 1;
+  }
+  return weights;
+}
+
+// 'latin' means the Latin words won and a detector may still distinguish
+// English from French. 'und' means there were no letters at all.
+function dominantLanguage(text) {
+  const weights = languageWeights(text);
+  let best = 'und';
+  let bestCount = 0;
+  for (const lang of WEIGHT_ORDER) {
+    const count = weights[lang];
+    if (count > bestCount) {
+      best = lang;
+      bestCount = count;
+    }
+  }
+  return best === 'en' ? 'latin' : best;
+}
+
 // detector: optional async (text) => { isReliable, languages: [{ language, percentage }] },
-// i.e. chrome.i18n.detectLanguage.
+// i.e. chrome.i18n.detectLanguage. Consulted only after the word/character
+// count says the text is Latin, and a non-Latin answer is ignored so a
+// detector cannot flip an English sentence to Chinese.
 export async function detectSourceLanguage(text, detector) {
-  const byScript = guessLanguageByScript(text);
-  if (byScript !== 'latin') return byScript;
+  const dominant = dominantLanguage(text);
+  if (dominant !== 'latin') return dominant;
   if (detector) {
     try {
       const result = await detector(text);
       const top = result?.languages?.[0]?.language;
-      if (result?.isReliable && top && top !== 'und') return top;
+      if (result?.isReliable && top && top !== 'und' && !['zh', 'ja', 'ko', 'ru', 'ar', 'th'].includes(primarySubtag(top))) return top;
     } catch {
       // Fall through to the heuristic default.
     }
@@ -75,12 +128,24 @@ export async function detectSourceLanguage(text, detector) {
   return 'en';
 }
 
-// When the source already is the target language, translate into the
-// second language instead, unless the user explicitly forced a target.
+// A second language that would not change the language, or a missing one,
+// falls back to the other side of the Chinese/English pair.
+function alternateLanguage(targetLang, secondLang) {
+  if (secondLang && !sameLanguage(secondLang, targetLang)) return secondLang;
+  return sameLanguage(targetLang, 'en') ? 'zh-CN' : 'en';
+}
+
+// Selection direction, decided here and not by the model. Detected Chinese
+// goes to the second language (English by default, never another Chinese).
+// Everything else goes to the configured target, even when that is the same
+// language. An explicit target from the card is kept as chosen, including
+// simplified-to-traditional, which detection cannot tell apart.
 export function resolveTargets({ sourceLang, targetLang, secondLang, forceTarget = false }) {
-  const second = sameLanguage(secondLang, targetLang) ? (sameLanguage(targetLang, 'en') ? 'zh-CN' : 'en') : secondLang;
-  if (!forceTarget && sameLanguage(sourceLang, targetLang)) {
-    return { target: second, fallback: targetLang, swapped: true };
+  const second = alternateLanguage(targetLang, secondLang);
+  if (forceTarget) return { target: targetLang, fallback: second, swapped: false };
+  if (sameLanguage(sourceLang, 'zh')) {
+    const chineseTarget = secondLang && !sameLanguage(secondLang, 'zh') ? secondLang : 'en';
+    return { target: chineseTarget, fallback: targetLang, swapped: !sameLanguage(chineseTarget, targetLang) };
   }
   return { target: targetLang, fallback: second, swapped: false };
 }

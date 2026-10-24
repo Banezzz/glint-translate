@@ -25,15 +25,40 @@ test('guessLanguageByScript', () => {
   assert.equal(guessLanguageByScript('12345'), 'und');
 });
 
-test('detectSourceLanguage uses the detector only for Latin script', async () => {
-  const detector = async () => ({ isReliable: true, languages: [{ language: 'fr', percentage: 99 }] });
+test('detectSourceLanguage counts Han per character and Latin per word', async () => {
+  let calls = 0;
+  const detector = async () => {
+    calls += 1;
+    return { isReliable: true, languages: [{ language: 'fr', percentage: 99 }] };
+  };
   assert.equal(await detectSourceLanguage('Bonjour tout le monde', detector), 'fr');
   assert.equal(await detectSourceLanguage('你好', detector), 'zh');
+  assert.equal(await detectSourceLanguage('今日はいい天気', detector), 'ja');
+  assert.equal(await detectSourceLanguage('Привет', detector), 'ru');
+  assert.equal(await detectSourceLanguage('12345', detector), 'und');
   assert.equal(await detectSourceLanguage('word', async () => ({ isReliable: false, languages: [] })), 'en');
   assert.equal(await detectSourceLanguage('word', async () => Promise.reject(new Error('x'))), 'en');
+  // A Chinese sentence with a few English words stays Chinese, and the detector is not asked.
+  const before = calls;
+  for (const text of [
+    '今天天气很好，我们去 park 散步吧',
+    'Please 帮我看一下 this PR 的 changes',
+    '这个函数 returns a Promise, 记得 await',
+    'API 调用失败，请重试',
+  ]) {
+    assert.equal(await detectSourceLanguage(text, detector), 'zh', text);
+  }
+  assert.equal(calls, before);
+  // Two English words tie one Han character; Latin wins and the detector may refine it.
+  assert.equal(await detectSourceLanguage('Hello world 好', detector), 'fr');
+  // A non-Latin detector answer cannot flip an English sentence.
+  assert.equal(
+    await detectSourceLanguage('Hello there', async () => ({ isReliable: true, languages: [{ language: 'zh-CN', percentage: 90 }] })),
+    'en',
+  );
 });
 
-test('resolveTargets swaps to the second language when source equals target', () => {
+test('resolveTargets sends Chinese to the second language', () => {
   assert.deepEqual(resolveTargets({ sourceLang: 'en', targetLang: 'zh-CN', secondLang: 'en' }), {
     target: 'zh-CN',
     fallback: 'en',
@@ -44,9 +69,20 @@ test('resolveTargets swaps to the second language when source equals target', ()
     fallback: 'zh-CN',
     swapped: true,
   });
-  assert.equal(resolveTargets({ sourceLang: 'zh', targetLang: 'zh-CN', secondLang: 'en', forceTarget: true }).target, 'zh-CN');
-  // A misconfigured second language equal to the target still yields a different language.
-  assert.equal(resolveTargets({ sourceLang: 'en', targetLang: 'en', secondLang: 'en' }).target, 'zh-CN');
+  assert.deepEqual(resolveTargets({ sourceLang: 'ja', targetLang: 'zh-CN', secondLang: 'en' }), {
+    target: 'zh-CN',
+    fallback: 'en',
+    swapped: false,
+  });
+  // Not Chinese, so it stays even when source and target are the same language.
+  assert.equal(resolveTargets({ sourceLang: 'ja', targetLang: 'ja', secondLang: 'en' }).target, 'ja');
+  assert.equal(resolveTargets({ sourceLang: 'en', targetLang: 'en', secondLang: 'en' }).target, 'en');
+  // A language picked on the card is kept, even for Chinese text.
+  assert.equal(resolveTargets({ sourceLang: 'zh', targetLang: 'en', secondLang: 'ja', forceTarget: true }).target, 'en');
+  assert.equal(resolveTargets({ sourceLang: 'zh', targetLang: 'zh-TW', secondLang: 'en', forceTarget: true }).target, 'zh-TW');
+  // A Chinese second language is not a destination for Chinese text.
+  assert.equal(resolveTargets({ sourceLang: 'zh', targetLang: 'zh-CN', secondLang: 'zh-TW' }).target, 'en');
+  assert.equal(resolveTargets({ sourceLang: 'zh', targetLang: 'zh-CN', secondLang: 'ja' }).target, 'ja');
   assert.equal(languageLabel('zh'), '中文');
   assert.equal(languageLabel('zh-cn'), '简体中文');
   assert.equal(languageLabel('fr-CA'), '法语');
@@ -62,11 +98,13 @@ test('isDictionaryCandidate', () => {
   assert.equal(isDictionaryCandidate('C++'), false);
 });
 
-test('buildSystemPrompt names both languages', () => {
+test('buildSystemPrompt names the target and does not ask the model to switch', () => {
   const p = buildSystemPrompt({ mode: 'translate', target: 'zh-CN', fallback: 'en' });
   assert.match(p, /into Simplified Chinese/);
-  assert.match(p, /into English instead/);
-  assert.match(buildSystemPrompt({ mode: 'dictionary', target: 'ja', fallback: 'en' }), /dictionary entry for it in Japanese/);
+  assert.doesNotMatch(p, /instead/);
+  const dictionary = buildSystemPrompt({ mode: 'dictionary', target: 'ja', fallback: 'en' });
+  assert.match(dictionary, /dictionary entry for it in Japanese/);
+  assert.match(dictionary, /in English instead/);
   assert.equal(clampInput('x'.repeat(MAX_INPUT_CHARS + 10)).length, MAX_INPUT_CHARS);
 });
 
