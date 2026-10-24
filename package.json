@@ -1,6 +1,6 @@
 {
   "name": "glint-translate",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Select-to-translate and bilingual page translation Chrome extension powered by your own OpenAI / Anthropic compatible LLM endpoint.",
   "type": "module",
