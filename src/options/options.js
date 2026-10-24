@@ -524,6 +524,7 @@ async function init() {
   $('enabled').checked = settings.enabled;
   checkRadio('trigger', settings.trigger);
   checkRadio('theme', settings.theme);
+  checkRadio('timeoutSeconds', settings.timeoutSeconds);
   checkRadio('uiLang', settings.uiLang);
   $('fontSize').value = settings.fontSize;
   $('fontSizeValue').textContent = `${settings.fontSize} px`;
@@ -567,6 +568,9 @@ async function init() {
       save({ uiLang: radio.value }, { quiet: true });
       applyLocale(radio.value);
     });
+  }
+  for (const radio of document.querySelectorAll('input[name="timeoutSeconds"]')) {
+    radio.addEventListener('change', () => save({ timeoutSeconds: Number(radio.value) }));
   }
   for (const radio of document.querySelectorAll('input[name="theme"]')) {
     radio.addEventListener('change', () => {

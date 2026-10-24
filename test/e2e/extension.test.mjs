@@ -138,8 +138,10 @@ test('the settings page switches its interface language live', async () => {
   const page = await openOptions();
   await page.locator('#connection[data-state="ok"]').waitFor({ timeout: 8000 });
   assert.equal(await page.textContent('h1'), 'Glint 划词翻译');
+  assert.equal(await page.locator('input[name="timeoutSeconds"][value="60"]').isChecked(), true);
   await page.locator('input[name="uiLang"][value="en"]').check({ force: true });
   assert.equal(await page.textContent('h1'), 'Glint Translate');
+  assert.equal(await page.locator('input[name="timeoutSeconds"][value="120"] + span').textContent(), '2 min');
   assert.equal(await page.getAttribute('html', 'lang'), 'en');
   assert.equal(await page.textContent('#sec-provider'), 'Model service');
   assert.match(await page.textContent('#connTitle'), /^Connected · OpenAI-compatible · 2 models$/);
@@ -148,6 +150,10 @@ test('the settings page switches its interface language live', async () => {
   await page.locator('.panel').first().screenshot({ path: join(ARTIFACTS, 'options-provider-en.png'), animations: 'disabled' });
   const stored = await serviceWorker.evaluate(() => chrome.storage.local.get('settings'));
   assert.equal(stored.settings.uiLang, 'en');
+
+  await page.locator('input[name="timeoutSeconds"][value="120"]').check({ force: true });
+  await page.waitForFunction(async () => (await chrome.storage.local.get('settings')).settings.timeoutSeconds === 120);
+  await page.locator('input[name="timeoutSeconds"][value="60"]').check({ force: true });
 
   // Another page switching back is picked up here too.
   await setSettings({ uiLang: 'zh-CN' });
