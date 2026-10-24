@@ -141,7 +141,7 @@ function translate() {
   $('resultMeta').textContent = t('translating');
   $('copy').hidden = true;
   cancel = translateStream(
-    { text, targetLang: $('targetLang').value },
+    { text },
     {
       onMeta: (meta) => {
         mode = meta.mode;
