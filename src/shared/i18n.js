@@ -27,6 +27,7 @@
       'error.http_429': '请求过于频繁或额度不足',
       'error.http_5xx': '服务暂时不可用（HTTP {status}）',
       'error.http_other': '请求失败（HTTP {status}）',
+      'error.timeout': '模型服务长时间没有响应',
 
       'protocol.openai': 'OpenAI 兼容',
       'protocol.anthropic': 'Anthropic 兼容',
@@ -212,6 +213,7 @@
       'error.http_429': 'Too many requests or quota exceeded',
       'error.http_5xx': 'Service temporarily unavailable (HTTP {status})',
       'error.http_other': 'Request failed (HTTP {status})',
+      'error.timeout': 'The model service stopped responding',
 
       'protocol.openai': 'OpenAI-compatible',
       'protocol.anthropic': 'Anthropic-compatible',

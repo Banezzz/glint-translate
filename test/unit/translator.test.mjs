@@ -111,3 +111,54 @@ test('buildChatRequest targets the right endpoint per protocol', () => {
     { role: 'user', content: 'T' },
   ]);
 });
+
+// A body that sends the given chunks with a pause before each, then stays
+// open forever when hang is true.
+function slowBody(chunks, { gapMs = 0, hang = false } = {}) {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    async start(controller) {
+      for (const chunk of chunks) {
+        await new Promise((resolve) => setTimeout(resolve, gapMs));
+        controller.enqueue(encoder.encode(chunk));
+      }
+      if (!hang) controller.close();
+    },
+  });
+}
+
+const sse = (text) => `data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`;
+const request = { url: 'https://x/v1/chat/completions', init: {} };
+
+async function drain(options) {
+  let out = '';
+  for await (const d of streamChat({ request, ...options })) out += d;
+  return out;
+}
+
+test('times out when the server never answers', async () => {
+  const fetchImpl = () => new Promise(() => {});
+  const started = Date.now();
+  await assert.rejects(drain({ fetchImpl, timeoutMs: 80 }), (err) => err instanceof TranslationError && err.code === 'timeout');
+  assert.ok(Date.now() - started < 1000);
+});
+
+test('times out when a stream stops midway', async () => {
+  const fetchImpl = async () => new Response(slowBody([sse('Hel'), sse('lo')], { hang: true }), { headers: { 'content-type': 'text/event-stream' } });
+  await assert.rejects(drain({ fetchImpl, timeoutMs: 80 }), (err) => err.code === 'timeout' && /No data/.test(err.detail));
+});
+
+test('a slow but steady stream does not time out', async () => {
+  // Reasoning chunks carry no visible text but still count as activity.
+  const thinking = `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: '…' } }] })}\n\n`;
+  const chunks = [thinking, thinking, thinking, sse('Hel'), sse('lo'), 'data: [DONE]\n\n'];
+  const fetchImpl = async () => new Response(slowBody(chunks, { gapMs: 50 }), { headers: { 'content-type': 'text/event-stream' } });
+  assert.equal(await drain({ fetchImpl, timeoutMs: 120 }), 'Hello');
+});
+
+test('cancelling is not reported as a timeout', async () => {
+  const controller = new AbortController();
+  const fetchImpl = (_url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
+  setTimeout(() => controller.abort(), 20);
+  await assert.rejects(drain({ fetchImpl, signal: controller.signal, timeoutMs: 1000 }), (err) => !(err instanceof TranslationError));
+});
